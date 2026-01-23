@@ -13,6 +13,7 @@ export const chatFunction = defineFunction({
     DB_USER: process.env.DB_USER || '',
     DB_PASSWORD: process.env.DB_PASSWORD || '',
     DB_SSL: process.env.DB_SSL || 'true',
+    DB_SCHEMA: process.env.DB_SCHEMA || 'public',
 
     // Claude API
     ANTHROPIC_API_KEY: process.env.ANTHROPIC_API_KEY || '',

@@ -21,6 +21,8 @@ export interface EnvironmentConfig {
   DB_PASSWORD: string;
   /** Enable SSL for database connections */
   DB_SSL: boolean;
+  /** PostgreSQL schema name (default: 'public') */
+  DB_SCHEMA: string;
 
   // Claude API
   /** Anthropic API key for Claude */
@@ -55,6 +57,7 @@ export interface EnvironmentConfig {
 const DEFAULT_CONFIG: Partial<EnvironmentConfig> = {
   DB_PORT: 5432,
   DB_SSL: true,
+  DB_SCHEMA: 'public',
   CLAUDE_MODEL: 'claude-3-5-sonnet-20241022',
   NODE_ENV: 'development',
   API_URL: 'http://localhost:3000',
@@ -132,6 +135,7 @@ export function getEnvironmentConfig(): EnvironmentConfig {
     DB_USER: process.env.DB_USER || '',
     DB_PASSWORD: process.env.DB_PASSWORD || '',
     DB_SSL: parseBoolean(process.env.DB_SSL, DEFAULT_CONFIG.DB_SSL!),
+    DB_SCHEMA: process.env.DB_SCHEMA || DEFAULT_CONFIG.DB_SCHEMA!,
 
     // Claude API
     ANTHROPIC_API_KEY: process.env.ANTHROPIC_API_KEY || '',

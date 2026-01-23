@@ -7,6 +7,7 @@
 import { defineBackend } from '@aws-amplify/backend';
 import { auth } from './auth/resource';
 import { data } from './data/resource';
+import { api } from './api/resource';
 import { chatFunction } from './functions/chat/resource';
 import { generateSummaryFunction } from './functions/generate-summary/resource';
 import { calculateKPIsFunction } from './functions/calculate-kpis/resource';
@@ -17,6 +18,7 @@ import { calculateKPIsFunction } from './functions/calculate-kpis/resource';
 export const backend = defineBackend({
   auth,
   data,
+  api,
   chatFunction,
   generateSummaryFunction,
   calculateKPIsFunction,

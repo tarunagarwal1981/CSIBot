@@ -13,6 +13,7 @@ export const calculateKPIsFunction = defineFunction({
     DB_USER: process.env.DB_USER || '',
     DB_PASSWORD: process.env.DB_PASSWORD || '',
     DB_SSL: process.env.DB_SSL || 'true',
+    DB_SCHEMA: process.env.DB_SCHEMA || 'public',
 
     // Application
     NODE_ENV: process.env.NODE_ENV || 'production',

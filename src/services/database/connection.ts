@@ -6,6 +6,7 @@
 
 import { Pool, PoolClient } from 'pg';
 import { getEnvironmentConfig } from '../../config/environment';
+import { mapTableNames } from '../../config/tableMapping';
 
 /**
  * Database connection pool singleton
@@ -51,6 +52,25 @@ export class DatabaseConnection {
 
     // Set up event handlers
     this.setupEventHandlers();
+
+    // Set search_path to the configured schema (if not 'public')
+    // This allows queries to use tables in the specified schema without prefixing
+    if (config.DB_SCHEMA && config.DB_SCHEMA !== 'public') {
+      // Validate schema name to prevent SQL injection (alphanumeric, underscore, hyphen only)
+      const schemaName = config.DB_SCHEMA.trim();
+      if (!/^[a-zA-Z_][a-zA-Z0-9_-]*$/.test(schemaName)) {
+        throw new Error(`Invalid DB_SCHEMA: "${schemaName}". Schema names must start with a letter or underscore and contain only alphanumeric characters, underscores, or hyphens.`);
+      }
+      
+      try {
+        // Use quote_ident to safely quote the schema name
+        await this.instance.query(`SET search_path TO "${schemaName}", public`);
+        console.log(`✅ Database schema set to: ${schemaName}`);
+      } catch (error: any) {
+        console.warn(`⚠️ Failed to set search_path to ${schemaName}:`, error.message);
+        // Continue anyway - queries might still work if schema is specified explicitly
+      }
+    }
 
     // Test the connection
     try {
@@ -104,12 +124,16 @@ export class DatabaseConnection {
     const pool = await this.getPool();
     const startTime = Date.now();
 
+    // Map table names if schema is not 'public'
+    const config = getEnvironmentConfig();
+    const mappedSql = config.DB_SCHEMA !== 'public' ? mapTableNames(sql) : sql;
+
     try {
-      const result = await pool.query(sql, params);
+      const result = await pool.query(mappedSql, params);
       const duration = Date.now() - startTime;
 
       if (duration > 1000) {
-        console.warn(`⚠️ Slow query detected (${duration}ms): ${sql.substring(0, 100)}...`);
+        console.warn(`⚠️ Slow query detected (${duration}ms): ${mappedSql.substring(0, 100)}...`);
       } else {
         console.log(`✅ Query executed in ${duration}ms`);
       }
@@ -118,7 +142,7 @@ export class DatabaseConnection {
     } catch (error: any) {
       const duration = Date.now() - startTime;
       console.error(`❌ Query failed after ${duration}ms:`, {
-        sql: sql.substring(0, 200),
+        sql: mappedSql.substring(0, 200),
         params: params?.slice(0, 5), // Log first 5 params for debugging
         error: error.message,
         code: error.code,
@@ -130,7 +154,7 @@ export class DatabaseConnection {
         const delay = this.calculateRetryDelay(retryCount);
         console.log(`🔄 Retrying query in ${delay}ms (attempt ${retryCount + 1}/${this.MAX_RETRIES})`);
         await this.sleep(delay);
-        return this.query<T>(sql, params, retryCount + 1);
+        return this.query<T>(mappedSql, params, retryCount + 1);
       }
 
       // Check for pool exhaustion

@@ -65,6 +65,7 @@ DB_NAME=crew_performance
 DB_USER=postgres
 DB_PASSWORD=your-password
 DB_SSL=true
+DB_SCHEMA=public
 
 # Claude API Configuration
 ANTHROPIC_API_KEY=sk-ant-...
@@ -73,6 +74,9 @@ CLAUDE_MODEL=claude-3-5-sonnet-20241022
 # Application Configuration
 NODE_ENV=development
 API_URL=http://localhost:3000
+
+# Frontend: backend API URL (set to sandbox API URL when running locally)
+VITE_API_URL=http://localhost:20002
 
 # Feature Flags
 ENABLE_SUMMARY_GENERATION=true
@@ -83,6 +87,8 @@ SUMMARY_REFRESH_DAYS=15
 MAX_TOKENS_PER_REQUEST=4000
 MAX_REQUESTS_PER_MINUTE=20
 ```
+
+**Local testing:** For where to set RDS, `VITE_API_URL`, and how table names work, see **[docs/LOCAL_SETUP.md](docs/LOCAL_SETUP.md)**.
 
 ### Database Setup
 
