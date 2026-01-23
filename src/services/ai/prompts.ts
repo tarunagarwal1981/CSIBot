@@ -248,8 +248,9 @@ Respond with valid JSON only, no additional text.`;
     conversationHistory: ChatMessage[];
     relevantCrewData?: any;
     kpiContext?: any;
+    multipleCrewData?: any[];
   }): string {
-    const { query, conversationHistory, relevantCrewData, kpiContext } = data;
+    const { query, conversationHistory, relevantCrewData, kpiContext, multipleCrewData } = data;
 
     const historyText = conversationHistory.length > 0
       ? conversationHistory
@@ -269,20 +270,35 @@ ${query}
 RELEVANT CREW DATA:
 ${relevantCrewData ? JSON.stringify(relevantCrewData, null, 2) : 'No specific crew data provided'}
 
+MULTIPLE CREW DATA (for queries requesting multiple crew members):
+${multipleCrewData && multipleCrewData.length > 0 
+  ? 'Found ' + multipleCrewData.length + ' crew members:\n' + JSON.stringify(multipleCrewData.map(c => ({
+      name: c.crew.seafarer_name,
+      code: c.crew.crew_code,
+      rank: c.crew.current_rank_name,
+      department: c.crew.department_name,
+      risk_level: c.summary?.risk_level || 'UNKNOWN',
+      risk_indicators: c.summary?.risk_indicators || [],
+      kpi_summary: Object.keys(c.kpiSnapshot || {}).length > 0 ? 'Available' : 'Not available'
+    })), null, 2)
+  : 'No multiple crew data provided'}
+
 KPI CONTEXT:
 ${kpiContext ? JSON.stringify(kpiContext, null, 2) : 'No specific KPI context provided'}
 
 GUIDELINES:
 1. Answer the question directly and concisely
 2. Reference specific data points when available
-3. If data is missing, acknowledge it and suggest what information would be helpful
-4. Use natural, conversational language
-5. Ask clarifying questions if the query is ambiguous
-6. Provide context and explanations for technical terms
-7. Reference specific KPIs, dates, or events when relevant
-8. If comparing or analyzing, provide balanced perspectives
-9. Suggest follow-up questions that might be helpful
-10. Maintain professional but friendly tone
+3. If MULTIPLE CREW DATA is provided, use it to answer queries about multiple crew members (e.g., "show me high-risk crew members")
+4. When listing multiple crew, provide a clear summary with key information (name, code, rank, risk level, key concerns)
+5. If data is missing, acknowledge it and suggest what information would be helpful
+6. Use natural, conversational language
+7. Ask clarifying questions if the query is ambiguous
+8. Provide context and explanations for technical terms
+9. Reference specific KPIs, dates, or events when relevant
+10. If comparing or analyzing, provide balanced perspectives
+11. Suggest follow-up questions that might be helpful
+12. Maintain professional but friendly tone
 
 RESPONSE FORMAT:
 - Provide a clear, direct answer

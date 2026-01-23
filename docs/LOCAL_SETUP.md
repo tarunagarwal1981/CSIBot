@@ -83,6 +83,17 @@ cp .env.example .env
 # Edit .env with DB_*, ANTHROPIC_API_KEY, and (after sandbox) VITE_API_URL
 ```
 
+### Step 1.5: Create Chat Tables (Required)
+
+The application requires `chat_session` and `chat_message` tables. Run the SQL script:
+
+```bash
+# Connect to your PostgreSQL database and run:
+psql -h <DB_HOST> -U <DB_USER> -d <DB_NAME> -f scripts/create-chat-tables.sql
+```
+
+Or manually execute the SQL in `scripts/create-chat-tables.sql` against your database.
+
 ### Step 2: Start backend (Amplify sandbox)
 
 Load `.env` and start the sandbox:
@@ -144,5 +155,5 @@ MAX_REQUESTS_PER_MINUTE=20
 |-------|----------------|
 | DB connection errors | `DB_HOST`, `DB_PORT`, `DB_NAME`, `DB_USER`, `DB_PASSWORD`, `DB_SSL` in `.env`; RDS security group / VPC allows your IP (or Lambda if in VPC). |
 | Chat/API 404 or CORS | `VITE_API_URL` in `.env` matches the sandbox API URL; restart `npm run dev` after changing `.env`. |
-| “Table does not exist” | Schema in RDS matches `docs/DATABASE.md`; table names in the repository files match your RDS. **If tables are in a custom schema (e.g., `csi`), set `DB_SCHEMA=csi` in `.env`.** |
+| “Table does not exist” | Schema in RDS matches `docs/DATABASE.md`; table names in the repository files match your RDS. **If tables are in a custom schema (e.g., `csi`), set `DB_SCHEMA=csi` in `.env`.** **Note: The `chat_session` and `chat_message` tables need to be created - see `scripts/create-chat-tables.sql`.** |
 | Sandbox doesn’t see DB vars | Run `npm run sandbox:local` (which loads `.env`) or `export` / `set` the vars in the same shell before `npx ampx sandbox`. |

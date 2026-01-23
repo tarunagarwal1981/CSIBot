@@ -22,18 +22,18 @@ export class KPIRepository {
   static async getAllKPIDefinitions(): Promise<KPIDefinition[]> {
     const sql = `
       SELECT 
-        kpi_code,
+        code as kpi_code,
         title,
         description,
         units,
         parent_code,
         kpi_orientation,
         status,
-        created_at,
+        updated_at AS created_at,
         updated_at
-      FROM kpi_definition
+      FROM csi_kpi_items
       WHERE status = 'Active'
-      ORDER BY kpi_code
+      ORDER BY code
     `;
 
     return await DatabaseConnection.query<KPIDefinition>(sql);
@@ -47,17 +47,17 @@ export class KPIRepository {
   static async getKPIByCode(kpiCode: string): Promise<KPIDefinition | null> {
     const sql = `
       SELECT 
-        kpi_code,
+        code as kpi_code,
         title,
         description,
         units,
         parent_code,
         kpi_orientation,
         status,
-        created_at,
+        updated_at AS created_at,
         updated_at
-      FROM kpi_definition
-      WHERE kpi_code = $1
+      FROM csi_kpi_items
+      WHERE code = $1
     `;
 
     return await DatabaseConnection.queryOne<KPIDefinition>(sql, [kpiCode]);
@@ -70,23 +70,76 @@ export class KPIRepository {
    * @returns Map of KPI codes to their current values
    */
   static async getCrewKPISnapshot(seafarerId: number): Promise<KPISnapshot> {
+    // Query KPIs from the 4 separate views - each view has one row per seafarer with all KPIs as columns
+    // We query each view once and extract all KPI columns using UNION ALL
     const sql = `
-      WITH latest_kpi_values AS (
-        SELECT DISTINCT ON (kpi_code)
-          kpi_code,
-          value,
-          calculated_at,
-          valid_from,
-          valid_to
-        FROM kpi_value
+      WITH competency_kpis AS (
+        SELECT kpi_code, value
+        FROM vw_csi_competency,
+        LATERAL (VALUES
+          ('CO0001', work_experience_with_synergy),
+          ('CO0002', current_rank_experience),
+          ('CO0003', time_in_current_ship_type),
+          ('CO0004', serving_on_ota_ship_in_last_5_years),
+          ('CO0005', vessel_takeover_new),
+          ('CO0006', vessel_takeover_second_hand),
+          ('CO0007', onboard_training_and_courses),
+          ('CO0008', dry_dock_experience),
+          ('CO0009', cbt_score),
+          ('CO0010', training_matrix_course),
+          ('CO0011', superior_certificate)
+        ) AS kpi(kpi_code, value)
         WHERE seafarer_id = $1
-          AND (valid_to IS NULL OR valid_to >= CURRENT_DATE)
-        ORDER BY kpi_code, calculated_at DESC
+      ),
+      capability_kpis AS (
+        SELECT kpi_code, value
+        FROM vw_csi_capability,
+        LATERAL (VALUES
+          ('CP0001', successful_voyage_performance),
+          ('CP0002', no_of_days_since_last_failure),
+          ('CP0003', average_appraisal_score),
+          ('CP0004', psychometric_score),
+          ('CP0005', sign_off_due_to_medical_reason_3_years)
+        ) AS kpi(kpi_code, value)
+        WHERE seafarer_id = $1
+      ),
+      character_kpis AS (
+        SELECT kpi_code, value
+        FROM vw_csi_character,
+        LATERAL (VALUES
+          ('CH0001', successful_contract),
+          ('CH0002', offhires_days_last_3_years),
+          ('CH0003', sign_on_delays_crew),
+          ('CH0004', leadership),
+          ('CH0005', management),
+          ('CH0006', team_work),
+          ('CH0007', knowledge)
+        ) AS kpi(kpi_code, value)
+        WHERE seafarer_id = $1
+      ),
+      collaboration_kpis AS (
+        SELECT kpi_code, value
+        FROM vw_csi_collaboration,
+        LATERAL (VALUES
+          ('CL0001', negative_inspections_3_years),
+          ('CL0002', no_of_detentions_3_years),
+          ('CL0003', positive_inspections_3_years),
+          ('CL0004', vetting_awards_3_years),
+          ('CL0005', major_incidents_in_last_3_years),
+          ('CL0006', shore_communication),
+          ('CL0007', ship_communication)
+        ) AS kpi(kpi_code, value)
+        WHERE seafarer_id = $1
+      ),
+      all_kpis AS (
+        SELECT * FROM competency_kpis
+        UNION ALL SELECT * FROM capability_kpis
+        UNION ALL SELECT * FROM character_kpis
+        UNION ALL SELECT * FROM collaboration_kpis
       )
-      SELECT 
-        kpi_code,
-        value
-      FROM latest_kpi_values
+      SELECT kpi_code, value
+      FROM all_kpis
+      WHERE value IS NOT NULL
       ORDER BY kpi_code
     `;
 
@@ -190,8 +243,8 @@ export class KPIRepository {
       ),
       kpi_orientation AS (
         SELECT kpi_orientation
-        FROM kpi_definition
-        WHERE kpi_code = $2
+        FROM csi_kpi_items
+        WHERE code = $2
       )
       SELECT 
         COALESCE(cv.value, 0) as current,
@@ -392,8 +445,8 @@ export class KPIRepository {
       // This is a root KPI, check if it has children that need aggregation
       const sql = `
         WITH child_kpis AS (
-          SELECT kpi_code
-          FROM kpi_definition
+          SELECT code as kpi_code
+          FROM csi_kpi_items
           WHERE parent_code = $1
         ),
         child_values AS (

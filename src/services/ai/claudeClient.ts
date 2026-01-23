@@ -69,7 +69,7 @@ export class ClaudeClient {
       apiKey: key,
     });
 
-    this.model = config.CLAUDE_MODEL || 'claude-3-5-sonnet-20241022';
+    this.model = config.CLAUDE_MODEL || 'claude-haiku-4-5-20251001';
     this.defaultMaxTokens = config.MAX_TOKENS_PER_REQUEST || 4000;
   }
 

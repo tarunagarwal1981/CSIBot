@@ -4,6 +4,7 @@
   "type": "module",
   "scripts": {
     "dev": "vite",
+    "dev:all": "concurrently \"npm run dev\" \"npm run server\" --names \"frontend,backend\" --prefix-colors \"cyan,magenta\"",
     "build": "tsc && vite build",
     "preview": "vite preview",
     "sandbox": "npx ampx sandbox",
@@ -13,6 +14,7 @@
     "deploy:dev": "npx ampx pipeline-deploy --branch dev",
     "deploy:prod": "npx ampx pipeline-deploy --branch main",
     "generate-env": "node scripts/generate-env.js",
+    "test:db": "tsx scripts/test-db.ts",
     "test": "vitest",
     "lint": "eslint src --ext ts,tsx",
     "format": "prettier --write src"
@@ -41,6 +43,7 @@
     "@typescript-eslint/parser": "^6.0.0",
     "@vitejs/plugin-react": "^4.2.0",
     "autoprefixer": "^10.4.0",
+    "concurrently": "^9.2.1",
     "cors": "^2.8.6",
     "dotenv": "^17.2.3",
     "eslint": "^8.56.0",

@@ -74,8 +74,27 @@ export function ChatInterface() {
       });
 
       if (!response.ok) {
-        const errorData = await response.json();
-        throw new Error(errorData.error || 'Failed to get response');
+        let errorData;
+        try {
+          errorData = await response.json();
+        } catch {
+          errorData = { error: `HTTP ${response.status}: ${response.statusText}` };
+        }
+        // Log full error details
+        console.error('Full server error response:', JSON.stringify(errorData, null, 2));
+        
+        // Include more details from the error response - check all possible fields
+        const errorMessage = errorData.message || errorData.error || errorData.details || errorData.stack || `Server error: ${response.status}`;
+        const fullError = errorData.stack ? `${errorMessage}\n\nStack trace:\n${errorData.stack}` : errorMessage;
+        
+        console.error('Server error response:', {
+          status: response.status,
+          statusText: response.statusText,
+          errorData: JSON.stringify(errorData, null, 2),
+        });
+        
+        // Show full error details in the UI
+        throw new Error(fullError);
       }
 
       const data = await response.json();

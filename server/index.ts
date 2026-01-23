@@ -4,7 +4,10 @@
  * @module server/index
  */
 
-import 'dotenv/config';
+import { config } from 'dotenv';
+import { resolve } from 'path';
+// Load .env file explicitly from project root
+config({ path: resolve(process.cwd(), '.env') });
 import express from 'express';
 import cors from 'cors';
 import { chatHandler } from './routes/chat.js';

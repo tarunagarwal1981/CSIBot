@@ -286,29 +286,156 @@ export class AIOrchestrator {
         temperature: 0.3,
       });
 
+      console.log('📋 Query understanding result:', JSON.stringify(queryUnderstanding, null, 2));
+      console.log(`👥 Extracted crew members: ${queryUnderstanding.entities.crew_members.length} - ${JSON.stringify(queryUnderstanding.entities.crew_members)}`);
+
       // Get conversation history
       const conversationHistory = await ChatRepository.getConversationHistory(sessionId, 10);
 
-      // Gather relevant crew data if crew member is mentioned
+      // Gather relevant crew data if crew member is mentioned OR if query needs multiple crew
       let relevantCrewData: any = null;
       let kpiContext: any = null;
+      let multipleCrewData: any[] = [];
 
-      if (queryUnderstanding.entities.crew_members.length > 0) {
-        // For simplicity, use first mentioned crew member
-        const crewCode = queryUnderstanding.entities.crew_members[0];
-        const crew = await CrewRepository.getCrewByCode(crewCode);
+      // Check if query needs multiple crew (e.g., "high-risk", "all crew", "list crew")
+      const needsMultipleCrew = 
+        query.toLowerCase().includes('high-risk') ||
+        query.toLowerCase().includes('high risk') ||
+        query.toLowerCase().includes('risk crew') ||
+        query.toLowerCase().includes('show me') ||
+        query.toLowerCase().includes('list') ||
+        query.toLowerCase().includes('all crew') ||
+        query.toLowerCase().includes('find crew') ||
+        queryUnderstanding.intent === 'risk_analysis' && queryUnderstanding.entities.crew_members.length === 0;
+
+      if (needsMultipleCrew) {
+        // Try to query high-risk crew members from AI summaries first
+        try {
+          const { SummaryRepository } = await import('../database/repositories/summaryRepository');
+          const highRiskSummaries = await SummaryRepository.getSummariesByRiskLevel('HIGH', 20);
+          const criticalRiskSummaries = await SummaryRepository.getSummariesByRiskLevel('CRITICAL', 20);
+          
+          // Combine and get unique seafarer IDs
+          const allRiskSummaries = [...highRiskSummaries, ...criticalRiskSummaries];
+          const uniqueSeafarerIds = [...new Set(allRiskSummaries.map(s => s.seafarer_id))];
+          
+          if (uniqueSeafarerIds.length > 0) {
+            // Get crew info for each
+            const crewList = await Promise.all(
+              uniqueSeafarerIds.slice(0, 20).map(async (seafarerId) => {
+                const crew = await CrewRepository.getCrewById(seafarerId);
+                if (crew) {
+                  const summary = allRiskSummaries.find(s => s.seafarer_id === seafarerId);
+                  const kpiSnapshot = await KPIRepository.getCrewKPISnapshot(seafarerId);
+                  return {
+                    crew,
+                    summary,
+                    kpiSnapshot,
+                  };
+                }
+                return null;
+              })
+            );
+            
+            multipleCrewData = crewList.filter(c => c !== null);
+          }
+        } catch (error) {
+          console.warn('Could not query AI summaries, falling back to direct crew analysis:', error);
+        }
+        
+        // Fallback: If no summaries found, query crew directly and analyze KPIs
+        if (multipleCrewData.length === 0) {
+          console.log('No AI summaries found, querying crew directly...');
+          // Get a sample of crew members
+          const crewList = await CrewRepository.getCrewList(1, 50);
+          
+          // Analyze each crew member's KPIs to identify high-risk
+          const analyzedCrew = await Promise.all(
+            crewList.crew.slice(0, 30).map(async (crew) => {
+              try {
+                const kpiSnapshot = await KPIRepository.getCrewKPISnapshot(crew.seafarer_id);
+                
+                // Simple risk scoring: count KPIs below threshold (assuming lower is worse for most)
+                // This is a simplified approach - in production, use proper risk analysis
+                const riskFactors: string[] = [];
+                let riskScore = 0;
+                
+                for (const [kpiCode, value] of Object.entries(kpiSnapshot)) {
+                  if (typeof value === 'number') {
+                    // Simple heuristic: values below 50 might indicate issues
+                    // In production, use proper benchmarks per KPI
+                    if (value < 50) {
+                      riskScore++;
+                      riskFactors.push(`${kpiCode}: ${value}`);
+                    }
+                  }
+                }
+                
+                // Consider high-risk if risk score > 5 or has multiple low KPIs
+                if (riskScore >= 5) {
+                  return {
+                    crew,
+                    kpiSnapshot,
+                    riskScore,
+                    riskFactors: riskFactors.slice(0, 5), // Top 5 risk factors
+                    estimatedRiskLevel: riskScore >= 10 ? 'HIGH' : riskScore >= 7 ? 'MEDIUM' : 'LOW',
+                  };
+                }
+                return null;
+              } catch (error) {
+                console.warn(`Failed to analyze crew ${crew.seafarer_id}:`, error);
+                return null;
+              }
+            })
+          );
+          
+          // Sort by risk score and take top 20
+          multipleCrewData = analyzedCrew
+            .filter(c => c !== null)
+            .sort((a, b) => (b?.riskScore || 0) - (a?.riskScore || 0))
+            .slice(0, 20);
+        }
+      } else if (queryUnderstanding.entities.crew_members.length > 0) {
+        // Try to find crew member by code first, then by name
+        const crewIdentifier = queryUnderstanding.entities.crew_members[0];
+        console.log(`🔍 Searching for crew member: "${crewIdentifier}"`);
+        
+        let crew = await CrewRepository.getCrewByCode(crewIdentifier);
+        console.log(`📋 Search by code result:`, crew ? `Found: ${crew.seafarer_name}` : 'Not found');
+        
+        // If not found by code, try searching by name
+        if (!crew) {
+          console.log(`🔍 Trying name search for: "${crewIdentifier}"`);
+          const crewList = await CrewRepository.searchCrew(crewIdentifier, 5);
+          console.log(`📋 Name search found ${crewList.length} results`);
+          if (crewList.length > 0) {
+            crew = crewList[0]; // Use first match
+            console.log(`✅ Using first match: ${crew.seafarer_name} (ID: ${crew.seafarer_id})`);
+          }
+        }
+        
         if (crew) {
-          relevantCrewData = await this.gatherCrewData(crew.seafarer_id, false);
-          kpiContext = relevantCrewData.kpiSnapshot;
+          console.log(`📊 Gathering crew data for: ${crew.seafarer_name} (ID: ${crew.seafarer_id})`);
+          try {
+            relevantCrewData = await this.gatherCrewData(crew.seafarer_id, false);
+            kpiContext = relevantCrewData.kpiSnapshot;
+            console.log(`✅ Crew data gathered successfully. KPIs: ${Object.keys(kpiContext).length} found`);
+          } catch (error: any) {
+            console.error(`❌ Failed to gather crew data:`, error.message);
+          }
+        } else {
+          console.log(`⚠️ Crew member not found: "${crewIdentifier}"`);
         }
       }
 
       // Build chat response prompt
+      console.log(`📝 Building prompt. Has relevantCrewData: ${!!relevantCrewData}, Has kpiContext: ${!!kpiContext}`);
       const chatPrompt = PromptTemplates.getChatResponsePrompt({
         query,
         conversationHistory,
         relevantCrewData,
         kpiContext,
+        multipleCrewData: multipleCrewData.length > 0 ? multipleCrewData : undefined,
       });
 
       // Call Claude API

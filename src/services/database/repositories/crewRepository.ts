@@ -37,7 +37,7 @@ export class CrewRepository {
         sailing_status,
         department_name,
         pod_name,
-        created_at,
+        updated_at AS created_at,
         updated_at
       FROM crew_master
       WHERE seafarer_id = $1
@@ -63,7 +63,7 @@ export class CrewRepository {
         sailing_status,
         department_name,
         pod_name,
-        created_at,
+        updated_at AS created_at,
         updated_at
       FROM crew_master
       WHERE crew_code = $1
@@ -89,7 +89,7 @@ export class CrewRepository {
         sailing_status,
         department_name,
         pod_name,
-        created_at,
+        updated_at AS created_at,
         updated_at
       FROM crew_master
       WHERE LOWER(seafarer_name) LIKE LOWER($1)
@@ -126,7 +126,7 @@ export class CrewRepository {
         sailing_status,
         department_name,
         pod_name,
-        created_at,
+        updated_at AS created_at,
         updated_at,
         CASE
           WHEN LOWER(crew_code) = LOWER($1) THEN 1
@@ -336,7 +336,7 @@ export class CrewRepository {
         sailing_status,
         department_name,
         pod_name,
-        created_at,
+        updated_at AS created_at,
         updated_at
       FROM crew_master
       WHERE sailing_status = $1
@@ -364,7 +364,7 @@ export class CrewRepository {
         sailing_status,
         department_name,
         pod_name,
-        created_at,
+        updated_at AS created_at,
         updated_at
       FROM crew_master
       WHERE current_rank_name = $1
@@ -534,7 +534,7 @@ export class CrewRepository {
         sailing_status,
         department_name,
         pod_name,
-        created_at,
+        updated_at AS created_at,
         updated_at
       FROM crew_master
       ${whereClause}

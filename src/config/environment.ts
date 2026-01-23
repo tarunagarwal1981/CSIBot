@@ -58,7 +58,7 @@ const DEFAULT_CONFIG: Partial<EnvironmentConfig> = {
   DB_PORT: 5432,
   DB_SSL: true,
   DB_SCHEMA: 'public',
-  CLAUDE_MODEL: 'claude-3-5-sonnet-20241022',
+  CLAUDE_MODEL: 'claude-haiku-4-5-20251001',
   NODE_ENV: 'development',
   API_URL: 'http://localhost:3000',
   ENABLE_SUMMARY_GENERATION: true,
@@ -133,7 +133,9 @@ export function getEnvironmentConfig(): EnvironmentConfig {
     DB_PORT: parseNumber(process.env.DB_PORT, DEFAULT_CONFIG.DB_PORT!),
     DB_NAME: process.env.DB_NAME || '',
     DB_USER: process.env.DB_USER || '',
-    DB_PASSWORD: process.env.DB_PASSWORD || '',
+    // Handle password - strip surrounding quotes but preserve spaces and special characters
+    // dotenv handles quoted values, but we strip quotes to be safe
+    DB_PASSWORD: (process.env.DB_PASSWORD || '').replace(/^["']|["']$/g, ''),
     DB_SSL: parseBoolean(process.env.DB_SSL, DEFAULT_CONFIG.DB_SSL!),
     DB_SCHEMA: process.env.DB_SCHEMA || DEFAULT_CONFIG.DB_SCHEMA!,
 

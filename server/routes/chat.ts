@@ -46,8 +46,14 @@ export async function chatHandler(req: Request, res: Response) {
   } catch (error: any) {
     console.error('❌ Chat handler error:', error);
     console.error('Error stack:', error.stack);
+    console.error('Error details:', {
+      message: error.message,
+      name: error.name,
+      code: error.code,
+    });
     res.status(500).json({
       error: 'Internal server error',
+      message: error.message || 'Unknown error',
       details: process.env.NODE_ENV === 'development' ? error.message : undefined,
       stack: process.env.NODE_ENV === 'development' ? error.stack : undefined,
     });
