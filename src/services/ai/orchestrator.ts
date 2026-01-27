@@ -13,6 +13,7 @@ import { TrainingRepository } from '../database/repositories/trainingRepository'
 import { PerformanceRepository } from '../database/repositories/performanceRepository';
 import { SummaryRepository } from '../database/repositories/summaryRepository';
 import { ChatRepository } from '../database/repositories/chatRepository';
+import { ALL_KPI_COLUMNS } from '../../config/kpiColumnMapping';
 import type {
   AISummary,
   CrewMaster,
@@ -758,6 +759,19 @@ export class AIOrchestrator {
 
     // Get KPI snapshot
     const kpiSnapshot = await KPIRepository.getCrewKPISnapshot(seafarerId);
+
+    // Enhance KPI data with metadata from mapping
+    const kpisWithMetadata = Object.entries(kpiSnapshot)
+      .filter(([key]) => key !== 'seafarer_id')
+      .map(([kpiCode, value]) => {
+        const mapping = ALL_KPI_COLUMNS[kpiCode];
+        return {
+          code: kpiCode,
+          value: value,
+          description: mapping?.description || 'Unknown KPI',
+          category: mapping?.category || 'Other',
+        };
+      });
 
     // Get experience history
     const experience = includeHistory

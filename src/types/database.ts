@@ -342,10 +342,14 @@ export interface ChatMessage {
 }
 
 /**
- * Snapshot of all 28 KPI codes with their current values
- * Key is KPI code, value is the current KPI value
+ * KPI Snapshot - dynamic record of all KPI values
+ * Keys are KPI codes (CO0001, CP0001, etc.)
+ * Values are the numeric KPI values
  */
-export type KPISnapshot = Record<string, number | null>;
+export interface KPISnapshot {
+  seafarer_id: number;
+  [kpiCode: string]: number; // Dynamic KPI values indexed by KPI code
+}
 
 /**
  * Structured risk evaluation

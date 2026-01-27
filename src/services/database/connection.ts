@@ -50,27 +50,8 @@ export class DatabaseConnection {
       statement_timeout: 30000, // Query timeout: 30 seconds
     });
 
-    // Set up event handlers
+    // Set up event handlers (includes search_path setup)
     this.setupEventHandlers();
-
-    // Set search_path to the configured schema (if not 'public')
-    // This allows queries to use tables in the specified schema without prefixing
-    if (config.DB_SCHEMA && config.DB_SCHEMA !== 'public') {
-      // Validate schema name to prevent SQL injection (alphanumeric, underscore, hyphen only)
-      const schemaName = config.DB_SCHEMA.trim();
-      if (!/^[a-zA-Z_][a-zA-Z0-9_-]*$/.test(schemaName)) {
-        throw new Error(`Invalid DB_SCHEMA: "${schemaName}". Schema names must start with a letter or underscore and contain only alphanumeric characters, underscores, or hyphens.`);
-      }
-      
-      try {
-        // Use quote_ident to safely quote the schema name
-        await this.instance.query(`SET search_path TO "${schemaName}", public`);
-        console.log(`✅ Database schema set to: ${schemaName}`);
-      } catch (error: any) {
-        console.warn(`⚠️ Failed to set search_path to ${schemaName}:`, error.message);
-        // Continue anyway - queries might still work if schema is specified explicitly
-      }
-    }
 
     // Test the connection
     try {
@@ -91,6 +72,28 @@ export class DatabaseConnection {
   private static setupEventHandlers(): void {
     if (!this.instance) return;
 
+    const config = getEnvironmentConfig();
+
+    // Set search_path on each new connection
+    // This tells PostgreSQL to look in 'csi' schema first, then 'public'
+    // Note: Using 'acquire' event because it provides the client
+    this.instance.on('acquire', async (client) => {
+      try {
+        if (config.DB_SCHEMA && config.DB_SCHEMA !== 'public') {
+          const schemaName = config.DB_SCHEMA.trim();
+          if (/^[a-zA-Z_][a-zA-Z0-9_-]*$/.test(schemaName)) {
+            await client.query(`SET search_path TO "${schemaName}", public`);
+            console.log(`✅ PostgreSQL search_path set to: ${schemaName}, public`);
+          }
+        } else {
+          await client.query('SET search_path TO public');
+          console.log('✅ PostgreSQL search_path set to: public');
+        }
+      } catch (error: any) {
+        console.error('❌ Failed to set search_path:', error.message);
+      }
+    });
+
     this.instance.on('connect', () => {
       console.log('🔌 New client connected to database');
     });
@@ -100,9 +103,6 @@ export class DatabaseConnection {
       // Don't exit the process, just log the error
     });
 
-    this.instance.on('acquire', () => {
-      console.log('📥 Client acquired from pool');
-    });
 
     this.instance.on('remove', () => {
       console.log('📤 Client removed from pool');

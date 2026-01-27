@@ -10,6 +10,14 @@ import type {
   KPIValue,
   KPISnapshot,
 } from '../../../types/database';
+import {
+  ALL_KPI_COLUMNS,
+  getKPIColumnMapping,
+  COMPETENCY_COLUMNS,
+  CAPABILITY_COLUMNS,
+  CHARACTER_COLUMNS,
+  COLLABORATION_COLUMNS,
+} from '../../../config/kpiColumnMapping';
 
 /**
  * Repository for KPI-related database operations
@@ -64,102 +72,98 @@ export class KPIRepository {
   }
 
   /**
-   * Get all 28 KPI values for a seafarer (current snapshot)
-   * Returns the most recent valid value for each KPI
-   * @param seafarerId Seafarer ID
-   * @returns Map of KPI codes to their current values
+   * Get complete KPI snapshot for a seafarer
+   * Builds snapshot from all 4 views using the column mapping
    */
   static async getCrewKPISnapshot(seafarerId: number): Promise<KPISnapshot> {
-    // Query KPIs from the 4 separate views - each view has one row per seafarer with all KPIs as columns
-    // We query each view once and extract all KPI columns using UNION ALL
-    const sql = `
+    try {
+      console.log(`📊 Building KPI snapshot for seafarer ${seafarerId}`);
+
+      // Build dynamic query using the column mapping
+      const competencyColumns = Object.values(COMPETENCY_COLUMNS)
+        .map(m => `('${m.kpiCode}', ${m.valueColumn})`)
+        .join(',\n          ');
+
+      const capabilityColumns = Object.values(CAPABILITY_COLUMNS)
+        .map(m => `('${m.kpiCode}', ${m.valueColumn})`)
+        .join(',\n          ');
+
+      const characterColumns = Object.values(CHARACTER_COLUMNS)
+        .map(m => `('${m.kpiCode}', ${m.valueColumn})`)
+        .join(',\n          ');
+
+      const collaborationColumns = Object.values(COLLABORATION_COLUMNS)
+        .map(m => `('${m.kpiCode}', ${m.valueColumn})`)
+        .join(',\n          ');
+
+      const sql = `
       WITH competency_kpis AS (
         SELECT kpi_code, value
         FROM vw_csi_competency,
         LATERAL (VALUES
-          ('CO0001', work_experience_with_synergy),
-          ('CO0002', current_rank_experience),
-          ('CO0003', time_in_current_ship_type),
-          ('CO0004', serving_on_ota_ship_in_last_5_years),
-          ('CO0005', vessel_takeover_new),
-          ('CO0006', vessel_takeover_second_hand),
-          ('CO0007', onboard_training_and_courses),
-          ('CO0008', dry_dock_experience),
-          ('CO0009', cbt_score),
-          ('CO0010', training_matrix_course),
-          ('CO0011', superior_certificate)
-        ) AS kpi(kpi_code, value)
+          ${competencyColumns}
+        ) AS v(kpi_code, value)
         WHERE seafarer_id = $1
       ),
       capability_kpis AS (
         SELECT kpi_code, value
         FROM vw_csi_capability,
         LATERAL (VALUES
-          ('CP0001', successful_voyage_performance),
-          ('CP0002', no_of_days_since_last_failure),
-          ('CP0003', average_appraisal_score),
-          ('CP0004', psychometric_score),
-          ('CP0005', sign_off_due_to_medical_reason_3_years)
-        ) AS kpi(kpi_code, value)
+          ${capabilityColumns}
+        ) AS v(kpi_code, value)
         WHERE seafarer_id = $1
       ),
       character_kpis AS (
         SELECT kpi_code, value
         FROM vw_csi_character,
         LATERAL (VALUES
-          ('CH0001', successful_contract),
-          ('CH0002', offhires_days_last_3_years),
-          ('CH0003', sign_on_delays_crew),
-          ('CH0004', leadership),
-          ('CH0005', management),
-          ('CH0006', team_work),
-          ('CH0007', knowledge)
-        ) AS kpi(kpi_code, value)
+          ${characterColumns}
+        ) AS v(kpi_code, value)
         WHERE seafarer_id = $1
       ),
       collaboration_kpis AS (
         SELECT kpi_code, value
         FROM vw_csi_collaboration,
         LATERAL (VALUES
-          ('CL0001', negative_inspections_3_years),
-          ('CL0002', no_of_detentions_3_years),
-          ('CL0003', positive_inspections_3_years),
-          ('CL0004', vetting_awards_3_years),
-          ('CL0005', major_incidents_in_last_3_years),
-          ('CL0006', shore_communication),
-          ('CL0007', ship_communication)
-        ) AS kpi(kpi_code, value)
+          ${collaborationColumns}
+        ) AS v(kpi_code, value)
         WHERE seafarer_id = $1
       ),
       all_kpis AS (
         SELECT * FROM competency_kpis
-        UNION ALL SELECT * FROM capability_kpis
-        UNION ALL SELECT * FROM character_kpis
-        UNION ALL SELECT * FROM collaboration_kpis
+        UNION ALL
+        SELECT * FROM capability_kpis
+        UNION ALL
+        SELECT * FROM character_kpis
+        UNION ALL
+        SELECT * FROM collaboration_kpis
       )
-      SELECT kpi_code, value
+      SELECT 
+        json_object_agg(kpi_code, value) as kpi_data
       FROM all_kpis
-      WHERE value IS NOT NULL
-      ORDER BY kpi_code
     `;
 
-    const results = await DatabaseConnection.query<{ kpi_code: string; value: number }>(sql, [seafarerId]);
+      const result = await DatabaseConnection.queryOne<{ kpi_data: Record<string, number> }>(
+        sql,
+        [seafarerId]
+      );
 
-    // Convert array to Record/Map format
-    const snapshot: KPISnapshot = {};
-    for (const row of results) {
-      snapshot[row.kpi_code] = row.value;
-    }
-
-    // Ensure all 28 KPIs are present (set to null if missing)
-    const allKPIs = await this.getAllKPIDefinitions();
-    for (const kpi of allKPIs) {
-      if (!(kpi.kpi_code in snapshot)) {
-        snapshot[kpi.kpi_code] = null;
+      if (!result || !result.kpi_data) {
+        console.warn(`⚠️  No KPI data found for seafarer ${seafarerId}`);
+        return { seafarer_id: seafarerId };
       }
-    }
 
-    return snapshot;
+      console.log(`✅ KPI snapshot built: ${Object.keys(result.kpi_data).length} KPIs`);
+      
+      return {
+        seafarer_id: seafarerId,
+        ...result.kpi_data,
+      } as KPISnapshot;
+
+    } catch (error: any) {
+      console.error(`❌ Error building KPI snapshot for ${seafarerId}:`, error);
+      throw error;
+    }
   }
 
   /**

@@ -22,7 +22,7 @@ export class ChatRepository {
     const sessionId = randomUUID();
 
     const sql = `
-      INSERT INTO csi.chat_session (
+      INSERT INTO chat_session (
         session_id,
         user_id,
         started_at,
@@ -60,7 +60,7 @@ export class ChatRepository {
         ended_at,
         total_messages,
         total_tokens
-      FROM csi.chat_session
+      FROM chat_session
       WHERE session_id = $1
     `;
 
@@ -77,7 +77,7 @@ export class ChatRepository {
     message: Omit<ChatMessage, 'id' | 'created_at'>
   ): Promise<number> {
     const sql = `
-      INSERT INTO csi.chat_message (
+      INSERT INTO chat_message (
         session_id,
         role,
         content,
@@ -135,7 +135,7 @@ export class ChatRepository {
         data_sources::jsonb as data_sources,
         tokens_used,
         created_at
-      FROM csi.chat_message
+      FROM chat_message
       WHERE session_id = $1
       ORDER BY created_at ASC
       LIMIT $2
@@ -177,7 +177,7 @@ export class ChatRepository {
     addTokens: number
   ): Promise<void> {
     const sql = `
-      UPDATE csi.chat_session
+      UPDATE chat_session
       SET 
         total_messages = total_messages + $2,
         total_tokens = total_tokens + $3
@@ -194,7 +194,7 @@ export class ChatRepository {
    */
   static async endSession(sessionId: string): Promise<void> {
     const sql = `
-      UPDATE csi.chat_session
+      UPDATE chat_session
       SET ended_at = CURRENT_TIMESTAMP
       WHERE session_id = $1
         AND ended_at IS NULL
@@ -224,7 +224,7 @@ export class ChatRepository {
         ended_at,
         total_messages,
         total_tokens
-      FROM csi.chat_session
+      FROM chat_session
       WHERE user_id = $1
       ORDER BY started_at DESC
       LIMIT $2
@@ -244,7 +244,7 @@ export class ChatRepository {
     // First, get count of sessions to be deleted
     const countSql = `
       SELECT COUNT(*) as delete_count
-      FROM csi.chat_session
+      FROM chat_session
       WHERE started_at < CURRENT_DATE - INTERVAL '1 day' * $1
     `;
 
@@ -255,7 +255,7 @@ export class ChatRepository {
 
     // Delete old sessions (messages will be cascade deleted if foreign key is set up)
     const deleteSql = `
-      DELETE FROM csi.chat_session
+      DELETE FROM chat_session
       WHERE started_at < CURRENT_DATE - INTERVAL '1 day' * $1
     `;
 
@@ -273,7 +273,7 @@ export class ChatRepository {
   static async getActiveSessionsCount(userId?: string): Promise<number> {
     let sql = `
       SELECT COUNT(*) as active_count
-      FROM csi.chat_session
+      FROM chat_session
       WHERE ended_at IS NULL
     `;
 
@@ -310,7 +310,7 @@ export class ChatRepository {
           total_tokens,
           started_at,
           ended_at
-        FROM csi.chat_session
+        FROM chat_session
         WHERE session_id = $1
       ),
       message_stats AS (
@@ -320,7 +320,7 @@ export class ChatRepository {
           COUNT(*) FILTER (WHERE role = 'assistant') as assistant_messages,
           SUM(tokens_used) as total_tokens,
           AVG(tokens_used) as avg_tokens
-        FROM csi.chat_message
+        FROM chat_message
         WHERE session_id = $1
       )
       SELECT 
@@ -379,7 +379,7 @@ export class ChatRepository {
         data_sources::jsonb as data_sources,
         tokens_used,
         created_at
-      FROM csi.chat_message
+      FROM chat_message
       WHERE id = $1
     `;
 
@@ -429,7 +429,7 @@ export class ChatRepository {
         data_sources::jsonb as data_sources,
         tokens_used,
         created_at
-      FROM csi.chat_message
+      FROM chat_message
       ORDER BY created_at DESC
       LIMIT $1
     `;

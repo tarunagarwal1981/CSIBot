@@ -31,11 +31,11 @@ export const TABLE_MAPPING: Record<string, string> = {
   // Note: These tables may not exist yet - will need to create or map:
   // 'training_certification': '...',  // Not visible in screenshot
   // 'performance_event': '...',        // Not visible in screenshot
-  'ai_summary': 'csi.ai_summary',      // Application table in CSI schema
+  'ai_summary': 'ai_summary',          // Application table in CSI schema (no schema prefix - search_path handles it)
   
   // Chat tables (application tables - should exist in CSI schema)
-  'chat_session': 'csi.chat_session',
-  'chat_message': 'csi.chat_message',
+  'chat_session': 'chat_session',     // No schema prefix - search_path handles it
+  'chat_message': 'chat_message',     // No schema prefix - search_path handles it
 };
 
 /**
