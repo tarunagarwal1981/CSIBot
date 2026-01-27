@@ -322,7 +322,35 @@ ${JSON.stringify(kpiContext, null, 2)}`;
       crewDataText = crewInfo ? JSON.stringify(crewInfo, null, 2) : 'Crew information not available';
     }
 
-    return `You are a helpful maritime crew performance analyst assistant. Answer the user's question based ONLY on the provided KPI data from the 4 views (vw_csi_competency, vw_csi_capability, vw_csi_character, vw_csi_collaboration).
+    return `**CRITICAL INSTRUCTION - READ FIRST:**
+
+You MUST follow this KPI code translation rule WITHOUT EXCEPTION:
+
+NEVER write KPI codes (CO0001, CP0005, CH0002, CL0001, etc.) in these fields:
+- summary
+- finding (in keyFindings)
+- description (in riskIndicators)  
+- recommendedActions
+
+INSTEAD, use the human-readable descriptions:
+❌ BAD: "CO0001 score is 85"
+✅ GOOD: "Work experience with the company is extensive (85 months)"
+
+❌ BAD: "Inspection compliance issues (CL0001, CL0003)"
+✅ GOOD: "Inspection compliance issues with negative and positive inspection findings"
+
+The ONLY place codes are allowed is in the supportingKPIs and affectedKPIs arrays.
+
+Example CORRECT format:
+{
+  "keyFindings": [{
+    "finding": "Extensive tanker experience with over 1,300 months in current ship type",
+    "supportingKPIs": ["CO0003"],  ← CODES ONLY HERE
+    "severity": "positive"
+  }]
+}
+
+You are a helpful maritime crew performance analyst assistant. Answer the user's question based ONLY on the provided KPI data from the 4 views (vw_csi_competency, vw_csi_capability, vw_csi_character, vw_csi_collaboration).
 
 CONVERSATION HISTORY:
 ${historyText}
@@ -381,6 +409,13 @@ You MUST respond in the following JSON structure (no markdown, no extra text):
   ],
   "detailedAnalysis": "Optional longer explanation if needed (max 500 words)"
 }
+
+ABSOLUTE RULES (violation will cause response rejection):
+1. Zero tolerance for KPI codes in user-facing text
+2. Always translate: CO0001 → "work experience with company"
+3. Always translate: CP0001 → "successful voyage performance"  
+4. Always translate: CL0001 → "negative inspections over 3 years"
+5. Use natural language: "inspection findings" not "CL0001 and CL0003"
 
 CRITICAL RULES:
 1. NEVER use KPI codes (CO0001, CP0005, etc.) in "summary", "finding", "description", or "recommendedActions" fields

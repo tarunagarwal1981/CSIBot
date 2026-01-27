@@ -5,6 +5,7 @@
  */
 
 import type { StructuredChatResponse } from '../types/chatResponse';
+import { getKPIColumnMapping } from '../config/kpiColumnMapping';
 
 /**
  * KPI code pattern: CO####, CP####, CH####, CL####
@@ -98,7 +99,24 @@ export function validateStructuredResponse(
     }
   });
 
-  // 7. Validate risk indicators structure
+  // 7. Check that supportingKPIs references are valid
+  response.keyFindings.forEach((finding, index) => {
+    if (finding.supportingKPIs && Array.isArray(finding.supportingKPIs)) {
+      finding.supportingKPIs.forEach(kpiRef => {
+        // Extract just the KPI code if it's in format "Description (CODE)"
+        const codeMatch = kpiRef.match(/\(?(C[OPH]L?\d{4})\)?/);
+        const kpiCode = codeMatch ? codeMatch[1] : kpiRef;
+        
+        const mapping = getKPIColumnMapping(kpiCode);
+        if (!mapping) {
+          console.warn(`⚠️ Key finding #${index + 1} references unknown KPI: ${kpiCode}`);
+          // Don't add to errors - just warn, as LLM might use full descriptions
+        }
+      });
+    }
+  });
+
+  // 8. Validate risk indicators structure
   response.riskIndicators.forEach((risk, index) => {
     if (!risk.riskType || risk.riskType.trim().length === 0) {
       errors.push(`Risk indicator #${index + 1} has empty riskType`);
@@ -114,21 +132,24 @@ export function validateStructuredResponse(
     }
   });
 
-  // 8. Validate KPI traceability structure
-  response.kpiTraceability.forEach((kpi, index) => {
-    if (!kpi.kpiCode || !/^C[OPH]L?\d{4}$/.test(kpi.kpiCode)) {
-      errors.push(`KPI traceability #${index + 1} has invalid kpiCode: ${kpi.kpiCode}`);
-    }
-    if (!kpi.humanReadableName || kpi.humanReadableName.trim().length === 0) {
-      errors.push(`KPI traceability #${index + 1} has empty humanReadableName`);
-    }
-    if (!kpi.category || kpi.category.trim().length === 0) {
-      errors.push(`KPI traceability #${index + 1} has empty category`);
-    }
-    if (!kpi.interpretation || kpi.interpretation.trim().length === 0) {
-      errors.push(`KPI traceability #${index + 1} has empty interpretation`);
-    }
-  });
+  // 9. Validate KPI traceability entries (if present)
+  if (response.kpiTraceability && Array.isArray(response.kpiTraceability)) {
+    response.kpiTraceability.forEach((kpi, index) => {
+      const mapping = getKPIColumnMapping(kpi.kpiCode);
+      if (!mapping) {
+        errors.push(`KPI traceability #${index + 1} has invalid kpiCode: ${kpi.kpiCode}`);
+      }
+      if (!kpi.humanReadableName || kpi.humanReadableName.trim().length === 0) {
+        errors.push(`KPI traceability #${index + 1} has empty humanReadableName`);
+      }
+      if (!kpi.category || kpi.category.trim().length === 0) {
+        errors.push(`KPI traceability #${index + 1} has empty category`);
+      }
+      if (!kpi.interpretation || kpi.interpretation.trim().length === 0) {
+        errors.push(`KPI traceability #${index + 1} has empty interpretation`);
+      }
+    });
+  }
 
   return {
     valid: errors.length === 0,

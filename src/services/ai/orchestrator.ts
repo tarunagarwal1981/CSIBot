@@ -276,7 +276,7 @@ export class AIOrchestrator {
     sessionId: string
   ): Promise<{
     response: string;
-    structuredResponse: StructuredChatResponse;
+    structuredResponse?: StructuredChatResponse;
     dataSources?: DataSource[];
     reasoningSteps?: string[];
     tokensUsed: number;
@@ -465,68 +465,103 @@ export class AIOrchestrator {
         kpiDataForFormatting = kpiContext;
       }
 
-      // Call Claude API - use completeJSON for structured output
-      const response = await this.claudeClient.completeJSON<{
-        summary: string;
-        keyFindings: Array<{
-          finding: string;
-          supportingKPIs: string[];
-          severity: 'positive' | 'neutral' | 'concern' | 'critical';
-        }>;
-        riskIndicators: Array<{
-          riskType: string;
-          severity: 'LOW' | 'MEDIUM' | 'HIGH' | 'CRITICAL';
-          description: string;
-          affectedKPIs: string[];
-        }>;
-        recommendedActions: string[];
-        detailedAnalysis?: string;
-      }>({
-        messages: [{ role: 'user', content: chatPrompt }],
-        systemPrompt,
-        temperature: 0.3, // Lower temp for more consistent JSON
-      });
-
-      // Format the response using ResponseFormatter
-      // Response is already structured JSON from completeJSON()
-      const structuredResponse = ResponseFormatter.formatStructuredResponse(
-        JSON.stringify(response),
-        kpiDataForFormatting
-      );
-
-      // Create a user-friendly text summary for backward compatibility
-      const userFriendlyText = ResponseFormatter.generateUserFriendlyText(structuredResponse);
-
-      // Validate structured response
-      const validation = validateStructuredResponse(structuredResponse);
-      let validationErrors: string[] | undefined;
+      // Call Claude API with JSON output
+      let structuredResponse: StructuredChatResponse;
+      let tokensUsed = 0;
       
-      if (!validation.valid) {
-        console.warn('⚠️ Structured response validation failed:', validation.errors);
-        validationErrors = validation.errors;
-        
-        // Optionally retry with stricter prompt if critical errors
-        const hasCriticalErrors = validation.errors.some(
-          error => error.includes('KPI codes') || error.includes('exceeds')
-        );
-        
-        if (hasCriticalErrors) {
-          console.log('🔄 Critical validation errors detected, but continuing with current response');
-          // Could implement retry logic here if needed
-          // For now, we'll log and continue with the response
-        }
-      } else {
-        console.log('✅ Structured response validation passed');
-      }
+      try {
+        // Try to get structured JSON response
+        const jsonResponse = await this.claudeClient.completeJSON<{
+          summary: string;
+          keyFindings: Array<{
+            finding: string;
+            supportingKPIs: string[];
+            severity: 'positive' | 'neutral' | 'concern' | 'critical';
+          }>;
+          riskIndicators: Array<{
+            riskType: string;
+            severity: 'LOW' | 'MEDIUM' | 'HIGH' | 'CRITICAL';
+            description: string;
+            affectedKPIs: string[];
+          }>;
+          recommendedActions: string[];
+          detailedAnalysis?: string;
+        }>({
+          messages: [{ role: 'user', content: chatPrompt }],
+          systemPrompt,
+          temperature: 0.3, // Lower temp for structured output
+        });
 
-      return {
-        response: userFriendlyText, // Human-readable text without codes
-        structuredResponse: structuredResponse, // Full structured data
-        reasoningSteps: undefined,
-        dataSources: undefined,
-        tokensUsed: 0, // completeJSON doesn't return usage - would need separate call
-        validationErrors: validationErrors,
-      };
+        // Format the response using ResponseFormatter
+        structuredResponse = ResponseFormatter.formatStructuredResponse(
+          JSON.stringify(jsonResponse),
+          kpiDataForFormatting
+        );
+
+        // Validate the response
+        const validation = validateStructuredResponse(structuredResponse);
+        if (!validation.valid) {
+          console.warn('⚠️ Structured response validation failed:', validation.errors);
+          
+          // Check for critical errors (KPI codes in user-facing text)
+          const hasCriticalErrors = validation.errors.some(err => 
+            err.includes('contains KPI codes')
+          );
+          
+          if (hasCriticalErrors) {
+            console.log('🔄 Critical validation errors detected - applying post-processing fix');
+            
+            // Force strip KPI codes from all user-facing text
+            structuredResponse.summary = ResponseFormatter.stripTechnicalCodes(structuredResponse.summary);
+            structuredResponse.keyFindings = structuredResponse.keyFindings.map(f => ({
+              ...f,
+              finding: ResponseFormatter.stripTechnicalCodes(f.finding)
+            }));
+            structuredResponse.recommendedActions = structuredResponse.recommendedActions.map(
+              a => ResponseFormatter.stripTechnicalCodes(a)
+            );
+            structuredResponse.riskIndicators = structuredResponse.riskIndicators.map(r => ({
+              ...r,
+              description: ResponseFormatter.stripTechnicalCodes(r.description)
+            }));
+            
+            console.log('✅ Post-processing completed - KPI codes stripped');
+          }
+        } else {
+          console.log('✅ Response validation passed');
+        }
+
+        // Generate user-friendly text for display
+        const userFriendlyText = ResponseFormatter.generateUserFriendlyText(structuredResponse);
+
+        return {
+          response: userFriendlyText,
+          structuredResponse: structuredResponse,
+          reasoningSteps: undefined,
+          dataSources: undefined,
+          tokensUsed: tokensUsed,
+        };
+
+      } catch (error: any) {
+        console.error('❌ Error generating structured response:', error);
+        
+        // Fallback to regular completion
+        const fallbackResponse = await this.claudeClient.complete({
+          messages: [{ role: 'user', content: chatPrompt }],
+          systemPrompt,
+          temperature: 0.7,
+        });
+        
+        tokensUsed = fallbackResponse.usage.inputTokens + fallbackResponse.usage.outputTokens;
+        
+        return {
+          response: ResponseFormatter.stripTechnicalCodes(fallbackResponse.content),
+          structuredResponse: undefined,
+          reasoningSteps: undefined,
+          dataSources: undefined,
+          tokensUsed: tokensUsed,
+        };
+      }
     } catch (error: any) {
       console.error('Error handling chat query:', error);
       throw new Error(`Failed to handle chat query: ${error.message}`);

@@ -10,6 +10,50 @@ import { MessageBubble, type Message } from './MessageBubble';
 import { TypingIndicator } from './TypingIndicator';
 
 /**
+ * Format structured response for display
+ */
+function formatStructuredForDisplay(structured: any): string {
+  if (!structured) return '';
+  
+  const parts: string[] = [];
+  
+  // Summary
+  parts.push(structured.summary);
+  parts.push('');
+  
+  // Key findings
+  if (structured.keyFindings?.length > 0) {
+    parts.push('**Key Findings:**');
+    structured.keyFindings.forEach((f: any) => {
+      const icon = f.severity === 'positive' ? '✅' : 
+                   f.severity === 'concern' ? '⚠️' :
+                   f.severity === 'critical' ? '🚨' : '•';
+      parts.push(`${icon} ${f.finding}`);
+    });
+    parts.push('');
+  }
+  
+  // Risk indicators
+  if (structured.riskIndicators?.length > 0) {
+    parts.push('**Risk Assessment:**');
+    structured.riskIndicators.forEach((r: any) => {
+      parts.push(`${r.severity} - ${r.riskType}: ${r.description}`);
+    });
+    parts.push('');
+  }
+  
+  // Actions
+  if (structured.recommendedActions?.length > 0) {
+    parts.push('**Recommended Actions:**');
+    structured.recommendedActions.forEach((a: any, i: number) => {
+      parts.push(`${i + 1}. ${a}`);
+    });
+  }
+  
+  return parts.join('\n');
+}
+
+/**
  * Main Chat Interface Component
  */
 export function ChatInterface() {
@@ -105,12 +149,34 @@ export function ChatInterface() {
         localStorage.setItem('chatSessionId', data.sessionId);
       }
 
+      // Extract the text response (not the structured JSON)
+      let displayContent = data.response;
+      
+      // If response is still JSON string, extract the user-friendly text
+      if (displayContent.startsWith('{') && displayContent.includes('"summary"')) {
+        try {
+          const parsed = JSON.parse(displayContent);
+          // Use the structured response if available
+          if (data.structuredResponse) {
+            // Format for display
+            displayContent = formatStructuredForDisplay(data.structuredResponse);
+          } else {
+            // Fallback: extract summary and key findings
+            displayContent = parsed.summary || displayContent;
+          }
+        } catch (e) {
+          console.error('Failed to parse JSON response:', e);
+          // Use as-is if parsing fails
+        }
+      }
+      
       const assistantMessage: Message = {
         role: 'assistant',
-        content: data.response,
+        content: displayContent,
+        timestamp: data.timestamp || new Date().toISOString(),
+        structuredData: data.structuredResponse, // Store for enhanced display
         dataSources: data.dataSources,
         reasoningSteps: data.reasoningSteps,
-        timestamp: data.timestamp || new Date().toISOString(),
       };
 
       setMessages((prev) => [...prev, assistantMessage]);

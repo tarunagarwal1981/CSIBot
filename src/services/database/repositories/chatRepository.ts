@@ -138,6 +138,14 @@ export class ChatRepository {
       if (!result) {
         throw new Error('Failed to save chat message');
       }
+      
+      // Update session statistics
+      await this.updateSessionStats(
+        message.session_id,
+        1, // Increment message count by 1
+        message.tokens_used // Add tokens
+      );
+      
       return result.id;
     } catch (error: any) {
       // If error is about missing column, retry without structured_response
@@ -169,23 +177,18 @@ export class ChatRepository {
         if (!result) {
           throw new Error('Failed to save chat message');
         }
+        
+        // Update session statistics
+        await this.updateSessionStats(
+          message.session_id,
+          1, // Increment message count by 1
+          message.tokens_used // Add tokens
+        );
+        
         return result.id;
       }
       throw error;
     }
-
-    if (!result) {
-      throw new Error('Failed to save chat message');
-    }
-
-    // Update session statistics
-    await this.updateSessionStats(
-      message.session_id,
-      1, // Increment message count by 1
-      message.tokens_used // Add tokens
-    );
-
-    return result.id;
   }
 
   /**

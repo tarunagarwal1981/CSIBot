@@ -119,14 +119,36 @@ export default class ResponseFormatter {
    * @returns Text with KPI codes replaced by human-readable descriptions
    */
   static stripTechnicalCodes(text: string): string {
-    // Regex pattern to match KPI codes: CO####, CP####, CH####, CL####
-    const kpiCodePattern = /\b(CO|CP|CH|CL)\d{4}\b/g;
+    if (!text) return text;
     
-    return text.replace(kpiCodePattern, (match) => {
-      const humanReadable = this.translateKPICodeToHuman(match);
-      // Replace code with human-readable name in parentheses for clarity
-      return `${humanReadable} (${match})`;
-    });
+    // Pattern to match KPI codes: CO####, CP####, CH####, CL####
+    // Including patterns with parentheses like "(CO0001)" or "CO0001:"
+    const kpiCodePattern = /\(?(C[OPH]L?\d{4})\)?[:\s]*/g;
+    
+    let result = text;
+    const matches = [...text.matchAll(kpiCodePattern)];
+    
+    // Replace each KPI code with its human-readable description
+    for (const match of matches) {
+      const kpiCode = match[1]; // Extract code without parentheses
+      const fullMatch = match[0]; // Full matched string including parentheses
+      const mapping = getKPIColumnMapping(kpiCode);
+      
+      if (mapping) {
+        // If code is in parentheses like "(CO0001)", remove entirely
+        if (fullMatch.startsWith('(')) {
+          result = result.replace(fullMatch, '');
+        } else {
+          // Replace standalone code with description
+          result = result.replace(fullMatch, mapping.description);
+        }
+      }
+    }
+    
+    // Clean up any double spaces created by removals
+    result = result.replace(/\s{2,}/g, ' ').trim();
+    
+    return result;
   }
 
   /**
