@@ -6,6 +6,8 @@
 
 import { ClaudeClient } from './claudeClient';
 import { PromptTemplates } from './prompts';
+import ResponseFormatter from './responseFormatter';
+import { validateStructuredResponse } from '../../utils/responseValidation';
 import { CrewRepository } from '../database/repositories/crewRepository';
 import { KPIRepository } from '../database/repositories/kpiRepository';
 import { ExperienceRepository } from '../database/repositories/experienceRepository';
@@ -22,7 +24,9 @@ import type {
   ExperienceHistory,
   TrainingCertification,
   PerformanceEvent,
+  DataSource,
 } from '../../types/database';
+import type { StructuredChatResponse } from '../../types/chatResponse';
 
 /**
  * AI Orchestrator
@@ -272,9 +276,11 @@ export class AIOrchestrator {
     sessionId: string
   ): Promise<{
     response: string;
-    dataSources: Array<{ kpi: string; value: any; table: string }>;
-    reasoningSteps: string[];
+    structuredResponse: StructuredChatResponse;
+    dataSources?: DataSource[];
+    reasoningSteps?: string[];
     tokensUsed: number;
+    validationErrors?: string[];
   }> {
     try {
       // First, understand the query
@@ -458,8 +464,81 @@ export class AIOrchestrator {
         temperature: 0.7,
       });
 
+      // Get KPI data for formatting (use comprehensive data if available)
+      let kpiDataForFormatting: KPIDataWithDetails[] = [];
+      if (relevantCrewData && relevantCrewData.kpiData && Array.isArray(relevantCrewData.kpiData)) {
+        kpiDataForFormatting = relevantCrewData.kpiData;
+      } else if (kpiContext && Array.isArray(kpiContext)) {
+        kpiDataForFormatting = kpiContext;
+      }
+
+      // Format the response using ResponseFormatter
+      let structuredResponse: StructuredChatResponse;
+      try {
+        // Try to parse as JSON first (since we're asking for JSON format)
+        let rawResponseText = response.content.trim();
+        
+        // Remove markdown code blocks if present
+        if (rawResponseText.startsWith('```json')) {
+          rawResponseText = rawResponseText.replace(/^```json\s*/, '').replace(/\s*```$/, '');
+        } else if (rawResponseText.startsWith('```')) {
+          rawResponseText = rawResponseText.replace(/^```\s*/, '').replace(/\s*```$/, '');
+        }
+        
+        // Try to parse JSON
+        try {
+          const parsedJson = JSON.parse(rawResponseText);
+          // If it's already structured, use it
+          structuredResponse = ResponseFormatter.formatStructuredResponse(
+            JSON.stringify(parsedJson),
+            kpiDataForFormatting
+          );
+        } catch {
+          // If not JSON, format the text response
+          structuredResponse = ResponseFormatter.formatStructuredResponse(
+            rawResponseText,
+            kpiDataForFormatting
+          );
+        }
+      } catch (error) {
+        console.warn('Error formatting structured response, using fallback:', error);
+        // Fallback: create minimal structured response
+        structuredResponse = {
+          summary: ResponseFormatter.stripTechnicalCodes(response.content.substring(0, 150)),
+          keyFindings: [],
+          riskIndicators: [],
+          recommendedActions: [],
+          kpiTraceability: ResponseFormatter.extractKPIReferences(response.content, kpiDataForFormatting),
+        };
+      }
+
+      // Validate structured response
+      const validation = validateStructuredResponse(structuredResponse);
+      let validationErrors: string[] | undefined;
+      
+      if (!validation.valid) {
+        console.warn('⚠️ Structured response validation failed:', validation.errors);
+        validationErrors = validation.errors;
+        
+        // Optionally retry with stricter prompt if critical errors
+        const hasCriticalErrors = validation.errors.some(
+          error => error.includes('KPI codes') || error.includes('exceeds')
+        );
+        
+        if (hasCriticalErrors) {
+          console.log('🔄 Critical validation errors detected, but continuing with current response');
+          // Could implement retry logic here if needed
+          // For now, we'll log and continue with the response
+        }
+      } else {
+        console.log('✅ Structured response validation passed');
+      }
+
+      // Clean the response text (remove technical codes)
+      const cleanedResponse = ResponseFormatter.stripTechnicalCodes(response.content);
+
       // Extract data sources from query understanding
-      const dataSources: Array<{ kpi: string; value: any; table: string }> = [];
+      const dataSources: DataSource[] = [];
       if (kpiContext && queryUnderstanding.entities.kpi_codes.length > 0) {
         // Handle both array format (KPIDataWithDetails[]) and object format (KPISnapshot)
         if (Array.isArray(kpiContext)) {
@@ -497,10 +576,12 @@ export class AIOrchestrator {
       ];
 
       return {
-        response: response.content,
-        dataSources,
+        response: cleanedResponse,
+        structuredResponse,
+        dataSources: dataSources.length > 0 ? dataSources : undefined,
         reasoningSteps,
         tokensUsed: response.usage.inputTokens + response.usage.outputTokens,
+        validationErrors: validationErrors,
       };
     } catch (error: any) {
       console.error('Error handling chat query:', error);
@@ -785,10 +866,11 @@ export class AIOrchestrator {
     // Get crew master info if we received an ID
     let crew: CrewMaster;
     if (typeof crewOrId === 'number') {
-      crew = await CrewRepository.getCrewById(crewOrId);
-      if (!crew) {
+      const crewResult = await CrewRepository.getCrewById(crewOrId);
+      if (!crewResult) {
         throw new Error(`Crew member not found: ${crewOrId}`);
       }
+      crew = crewResult;
     } else {
       crew = crewOrId;
     }

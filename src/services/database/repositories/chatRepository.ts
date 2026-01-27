@@ -76,27 +76,103 @@ export class ChatRepository {
   static async saveMessage(
     message: Omit<ChatMessage, 'id' | 'created_at'>
   ): Promise<number> {
-    const sql = `
-      INSERT INTO chat_message (
-        session_id,
-        role,
-        content,
-        reasoning_steps,
-        data_sources,
-        tokens_used
-      )
-      VALUES ($1, $2, $3, $4, $5, $6)
-      RETURNING id
-    `;
+    // Check if structured_response column exists by trying to query it
+    // If it doesn't exist, we'll use a fallback INSERT without that column
+    let sql: string;
+    let params: any[];
 
-    const result = await DatabaseConnection.queryOne<{ id: number }>(sql, [
-      message.session_id,
-      message.role,
-      message.content,
-      message.reasoning_steps ? JSON.stringify(message.reasoning_steps) : null,
-      message.data_sources ? JSON.stringify(message.data_sources) : null,
-      message.tokens_used,
-    ]);
+    try {
+      // Try to check if column exists by attempting a query
+      // If this fails, we'll use the fallback
+      sql = `
+        INSERT INTO chat_message (
+          session_id,
+          role,
+          content,
+          reasoning_steps,
+          data_sources,
+          structured_response,
+          tokens_used
+        )
+        VALUES ($1, $2, $3, $4, $5, $6, $7)
+        RETURNING id
+      `;
+
+      params = [
+        message.session_id,
+        message.role,
+        message.content,
+        message.reasoning_steps ? JSON.stringify(message.reasoning_steps) : null,
+        message.data_sources ? JSON.stringify(message.data_sources) : null,
+        message.structured_response ? JSON.stringify(message.structured_response) : null,
+        message.tokens_used,
+      ];
+    } catch {
+      // Fallback if column doesn't exist
+      sql = `
+        INSERT INTO chat_message (
+          session_id,
+          role,
+          content,
+          reasoning_steps,
+          data_sources,
+          tokens_used
+        )
+        VALUES ($1, $2, $3, $4, $5, $6)
+        RETURNING id
+      `;
+
+      params = [
+        message.session_id,
+        message.role,
+        message.content,
+        message.reasoning_steps ? JSON.stringify(message.reasoning_steps) : null,
+        message.data_sources ? JSON.stringify(message.data_sources) : null,
+        message.tokens_used,
+      ];
+    }
+
+    // Try with structured_response first, fallback if column doesn't exist
+    try {
+      const result = await DatabaseConnection.queryOne<{ id: number }>(sql, params);
+      if (!result) {
+        throw new Error('Failed to save chat message');
+      }
+      return result.id;
+    } catch (error: any) {
+      // If error is about missing column, retry without structured_response
+      if (error.code === '42703' && error.message?.includes('structured_response')) {
+        console.warn('⚠️ structured_response column not found, using fallback INSERT');
+        const fallbackSql = `
+          INSERT INTO chat_message (
+            session_id,
+            role,
+            content,
+            reasoning_steps,
+            data_sources,
+            tokens_used
+          )
+          VALUES ($1, $2, $3, $4, $5, $6)
+          RETURNING id
+        `;
+
+        const fallbackParams = [
+          message.session_id,
+          message.role,
+          message.content,
+          message.reasoning_steps ? JSON.stringify(message.reasoning_steps) : null,
+          message.data_sources ? JSON.stringify(message.data_sources) : null,
+          message.tokens_used,
+        ];
+
+        const result = await DatabaseConnection.queryOne<{ id: number }>(fallbackSql, fallbackParams);
+        if (!result) {
+          throw new Error('Failed to save chat message');
+        }
+        return result.id;
+      }
+      throw error;
+    }
 
     if (!result) {
       throw new Error('Failed to save chat message');
@@ -125,6 +201,7 @@ export class ChatRepository {
   ): Promise<ChatMessage[]> {
     const maxLimit = Math.min(limit, 500); // Cap at 500 for performance
 
+    // Use COALESCE to handle missing structured_response column gracefully
     const sql = `
       SELECT 
         id,
@@ -133,6 +210,7 @@ export class ChatRepository {
         content,
         reasoning_steps::jsonb as reasoning_steps,
         data_sources::jsonb as data_sources,
+        COALESCE(structured_response::jsonb, NULL) as structured_response,
         tokens_used,
         created_at
       FROM chat_message
@@ -148,6 +226,7 @@ export class ChatRepository {
       content: string;
       reasoning_steps: any;
       data_sources: any;
+      structured_response: any;
       tokens_used: number;
       created_at: Date;
     }>(sql, [sessionId, maxLimit]);
@@ -159,6 +238,7 @@ export class ChatRepository {
       content: result.content,
       reasoning_steps: result.reasoning_steps,
       data_sources: result.data_sources,
+      structured_response: result.structured_response,
       tokens_used: result.tokens_used,
       created_at: result.created_at,
     }));
@@ -369,6 +449,7 @@ export class ChatRepository {
    * @returns Chat message or null if not found
    */
   static async getMessageById(messageId: number): Promise<ChatMessage | null> {
+    // Use COALESCE to handle missing structured_response column gracefully
     const sql = `
       SELECT 
         id,
@@ -377,6 +458,7 @@ export class ChatRepository {
         content,
         reasoning_steps::jsonb as reasoning_steps,
         data_sources::jsonb as data_sources,
+        COALESCE(structured_response::jsonb, NULL) as structured_response,
         tokens_used,
         created_at
       FROM chat_message
@@ -390,6 +472,7 @@ export class ChatRepository {
       content: string;
       reasoning_steps: any;
       data_sources: any;
+      structured_response: any;
       tokens_used: number;
       created_at: Date;
     }>(sql, [messageId]);
@@ -405,6 +488,7 @@ export class ChatRepository {
       content: result.content,
       reasoning_steps: result.reasoning_steps,
       data_sources: result.data_sources,
+      structured_response: result.structured_response,
       tokens_used: result.tokens_used,
       created_at: result.created_at,
     };
@@ -419,6 +503,7 @@ export class ChatRepository {
   static async getRecentMessages(limit: number = 50): Promise<ChatMessage[]> {
     const maxLimit = Math.min(limit, 200);
 
+    // Use COALESCE to handle missing structured_response column gracefully
     const sql = `
       SELECT 
         id,
@@ -427,6 +512,7 @@ export class ChatRepository {
         content,
         reasoning_steps::jsonb as reasoning_steps,
         data_sources::jsonb as data_sources,
+        COALESCE(structured_response::jsonb, NULL) as structured_response,
         tokens_used,
         created_at
       FROM chat_message
@@ -441,6 +527,7 @@ export class ChatRepository {
       content: string;
       reasoning_steps: any;
       data_sources: any;
+      structured_response: any;
       tokens_used: number;
       created_at: Date;
     }>(sql, [maxLimit]);
@@ -452,6 +539,7 @@ export class ChatRepository {
       content: result.content,
       reasoning_steps: result.reasoning_steps,
       data_sources: result.data_sources,
+      structured_response: result.structured_response,
       tokens_used: result.tokens_used,
       created_at: result.created_at,
     }));

@@ -490,7 +490,7 @@ export class KPIRepository {
 
     for (const row of results) {
       if (!kpiMap.has(row.seafarer_id)) {
-        kpiMap.set(row.seafarer_id, {});
+        kpiMap.set(row.seafarer_id, { seafarer_id: row.seafarer_id });
       }
       const snapshot = kpiMap.get(row.seafarer_id)!;
       snapshot[row.kpi_code] = row.value;
@@ -499,7 +499,7 @@ export class KPIRepository {
     // Fill in nulls for missing KPIs
     for (const seafarerId of seafarerIds) {
       if (!kpiMap.has(seafarerId)) {
-        kpiMap.set(seafarerId, {});
+        kpiMap.set(seafarerId, { seafarer_id: seafarerId });
       }
       const snapshot = kpiMap.get(seafarerId)!;
       for (const kpiCode of kpiCodes) {

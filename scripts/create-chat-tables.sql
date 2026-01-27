@@ -21,6 +21,7 @@ CREATE TABLE IF NOT EXISTS csi.chat_message (
     content TEXT NOT NULL,
     reasoning_steps JSONB NULL,
     data_sources JSONB NULL,
+    structured_response JSONB NULL,
     tokens_used INTEGER NOT NULL DEFAULT 0,
     created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP
 );
@@ -30,6 +31,9 @@ CREATE INDEX IF NOT EXISTS idx_chat_session_user_id ON csi.chat_session(user_id)
 CREATE INDEX IF NOT EXISTS idx_chat_session_started_at ON csi.chat_session(started_at DESC);
 CREATE INDEX IF NOT EXISTS idx_chat_message_session_id ON csi.chat_message(session_id);
 CREATE INDEX IF NOT EXISTS idx_chat_message_created_at ON csi.chat_message(created_at);
+
+-- Migration: If chat_message table already exists, add structured_response column:
+-- ALTER TABLE csi.chat_message ADD COLUMN IF NOT EXISTS structured_response JSONB NULL;
 
 -- Grant permissions (adjust as needed for your database user)
 -- GRANT SELECT, INSERT, UPDATE, DELETE ON csi.chat_session TO your_user;

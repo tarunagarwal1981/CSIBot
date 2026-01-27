@@ -16,8 +16,11 @@ interface ChatRequest {
   userId: string;
 }
 
+import type { StructuredChatResponse } from '../../../src/types/chatResponse';
+
 interface ChatResponse {
   response: string;
+  structuredResponse?: StructuredChatResponse;
   sessionId: string;
   dataSources?: Array<{ kpi: string; value: any; table: string }>;
   reasoningSteps?: string[];
@@ -63,6 +66,7 @@ export const handler: Handler = async (event: any) => {
       content: message,
       reasoning_steps: null,
       data_sources: null,
+      structured_response: null,
       tokens_used: 0,
     });
 
@@ -78,27 +82,27 @@ export const handler: Handler = async (event: any) => {
       session_id: session,
       role: 'assistant',
       content: result.response,
-      reasoning_steps: result.reasoningSteps,
-      data_sources: result.dataSources,
+      reasoning_steps: result.reasoningSteps || null,
+      data_sources: result.dataSources || null,
+      structured_response: result.structuredResponse || null,
       tokens_used: result.tokensUsed,
     });
 
     // Note: Session stats are automatically updated by saveMessage()
 
     // 8. Return response
-    const response: ChatResponse = {
-      response: result.response,
-      sessionId: session,
-      dataSources: result.dataSources,
-      reasoningSteps: result.reasoningSteps,
-      tokensUsed: result.tokensUsed,
-      timestamp: new Date().toISOString(),
-    };
-
     return {
       statusCode: 200,
       headers: corsHeaders(),
-      body: JSON.stringify(response),
+      body: JSON.stringify({
+        response: result.response,
+        structuredResponse: result.structuredResponse,
+        sessionId: session,
+        dataSources: result.dataSources,
+        reasoningSteps: result.reasoningSteps,
+        tokensUsed: result.tokensUsed,
+        timestamp: new Date().toISOString(),
+      }),
     };
   } catch (error: any) {
     console.error('Chat handler error:', error);

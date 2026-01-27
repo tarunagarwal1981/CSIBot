@@ -335,6 +335,8 @@ export interface ChatMessage {
   reasoning_steps: string[] | null;
   /** Data sources referenced in the message, null if none */
   data_sources: DataSource[] | null;
+  /** Structured response data (for assistant messages), null if not applicable */
+  structured_response?: any | null;
   /** Tokens used for this message */
   tokens_used: number;
   /** Message creation timestamp */
