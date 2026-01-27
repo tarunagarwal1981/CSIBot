@@ -9,6 +9,8 @@ import type {
   KPIDefinition,
   KPIValue,
   KPISnapshot,
+  KPIDataWithDetails,
+  ComprehensiveKPISnapshot,
 } from '../../../types/database';
 import {
   ALL_KPI_COLUMNS,
@@ -96,7 +98,7 @@ export class KPIRepository {
         .map(m => `('${m.kpiCode}', ${m.valueColumn})`)
         .join(',\n          ');
 
-      const sql = `
+    const sql = `
       WITH competency_kpis AS (
         SELECT kpi_code, value
         FROM vw_csi_competency,
@@ -162,6 +164,154 @@ export class KPIRepository {
 
     } catch (error: any) {
       console.error(`❌ Error building KPI snapshot for ${seafarerId}:`, error);
+      throw error;
+    }
+  }
+
+  /**
+   * Get comprehensive KPI data with scores and parsed JSON details for a seafarer
+   * Fetches from all 4 KPI views using centralized mappings
+   * Returns structured array with score, details, and metadata for each KPI
+   */
+  static async getCrewKPIWithDetails(seafarerId: number): Promise<KPIDataWithDetails[]> {
+    try {
+      console.log(`📊 Building comprehensive KPI data with details for seafarer ${seafarerId}`);
+
+      // Build dynamic query using the column mapping - include both value and JSON columns
+      const competencyColumns = Object.values(COMPETENCY_COLUMNS)
+        .map(m => `('${m.kpiCode}', ${m.valueColumn}, ${m.jsonColumn})`)
+        .join(',\n          ');
+
+      const capabilityColumns = Object.values(CAPABILITY_COLUMNS)
+        .map(m => `('${m.kpiCode}', ${m.valueColumn}, ${m.jsonColumn})`)
+        .join(',\n          ');
+
+      const characterColumns = Object.values(CHARACTER_COLUMNS)
+        .map(m => `('${m.kpiCode}', ${m.valueColumn}, ${m.jsonColumn})`)
+        .join(',\n          ');
+
+      const collaborationColumns = Object.values(COLLABORATION_COLUMNS)
+        .map(m => `('${m.kpiCode}', ${m.valueColumn}, ${m.jsonColumn})`)
+        .join(',\n          ');
+
+      const sql = `
+      WITH competency_kpis AS (
+        SELECT 
+          kpi_code, 
+          value,
+          CASE 
+            WHEN json_details IS NULL OR json_details = '' OR json_details::text = 'null' THEN NULL
+            ELSE json_details::jsonb
+          END as parsed_details
+        FROM vw_csi_competency,
+        LATERAL (VALUES
+          ${competencyColumns}
+        ) AS v(kpi_code, value, json_details)
+        WHERE seafarer_id = $1
+      ),
+      capability_kpis AS (
+        SELECT 
+          kpi_code, 
+          value,
+          CASE 
+            WHEN json_details IS NULL OR json_details = '' OR json_details::text = 'null' THEN NULL
+            ELSE json_details::jsonb
+          END as parsed_details
+        FROM vw_csi_capability,
+        LATERAL (VALUES
+          ${capabilityColumns}
+        ) AS v(kpi_code, value, json_details)
+        WHERE seafarer_id = $1
+      ),
+      character_kpis AS (
+        SELECT 
+          kpi_code, 
+          value,
+          CASE 
+            WHEN json_details IS NULL OR json_details = '' OR json_details::text = 'null' THEN NULL
+            ELSE json_details::jsonb
+          END as parsed_details
+        FROM vw_csi_character,
+        LATERAL (VALUES
+          ${characterColumns}
+        ) AS v(kpi_code, value, json_details)
+        WHERE seafarer_id = $1
+      ),
+      collaboration_kpis AS (
+        SELECT 
+          kpi_code, 
+          value,
+          CASE 
+            WHEN json_details IS NULL OR json_details = '' OR json_details::text = 'null' THEN NULL
+            ELSE json_details::jsonb
+          END as parsed_details
+        FROM vw_csi_collaboration,
+        LATERAL (VALUES
+          ${collaborationColumns}
+        ) AS v(kpi_code, value, json_details)
+        WHERE seafarer_id = $1
+      ),
+      all_kpis AS (
+        SELECT * FROM competency_kpis
+        UNION ALL
+        SELECT * FROM capability_kpis
+        UNION ALL
+        SELECT * FROM character_kpis
+        UNION ALL
+        SELECT * FROM collaboration_kpis
+      )
+      SELECT 
+        kpi_code,
+        value as score,
+        parsed_details as details
+      FROM all_kpis
+      ORDER BY kpi_code
+    `;
+
+      const results = await DatabaseConnection.query<{
+        kpi_code: string;
+        score: number | null;
+        details: any;
+      }>(sql, [seafarerId]);
+
+      if (!results || results.length === 0) {
+        console.warn(`⚠️  No KPI data found for seafarer ${seafarerId}`);
+        return [];
+      }
+
+      // Enrich with metadata from mappings
+      const kpiDataWithDetails: KPIDataWithDetails[] = results.map(row => {
+        const mapping = getKPIColumnMapping(row.kpi_code);
+        if (!mapping) {
+          console.warn(`⚠️  No mapping found for KPI code: ${row.kpi_code}`);
+          return {
+            kpiCode: row.kpi_code,
+            score: row.score,
+            details: row.details,
+            category: 'Unknown',
+            description: 'Unknown KPI',
+            view: 'vw_csi_competency', // Default fallback
+            hasDetails: row.details !== null && row.details !== undefined,
+          };
+        }
+
+        return {
+          kpiCode: row.kpi_code,
+          score: row.score,
+          details: row.details,
+          category: mapping.category,
+          description: mapping.description,
+          view: mapping.view,
+          hasDetails: row.details !== null && row.details !== undefined,
+        };
+      });
+
+      console.log(`✅ Comprehensive KPI data built: ${kpiDataWithDetails.length} KPIs with details`);
+      
+      return kpiDataWithDetails;
+
+    } catch (error: any) {
+      console.error(`❌ Error building comprehensive KPI data for ${seafarerId}:`, error);
       throw error;
     }
   }

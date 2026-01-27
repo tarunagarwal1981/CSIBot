@@ -18,6 +18,7 @@ import type {
   AISummary,
   CrewMaster,
   KPISnapshot,
+  KPIDataWithDetails,
   ExperienceHistory,
   TrainingCertification,
   PerformanceEvent,
@@ -427,8 +428,9 @@ export class AIOrchestrator {
           try {
             // Pass the crew object so we can use crew_code for all queries
             relevantCrewData = await this.gatherCrewData(crew, false);
-            kpiContext = relevantCrewData.kpiSnapshot;
-            console.log(`✅ Crew data gathered successfully. KPIs: ${Object.keys(kpiContext).length} found`);
+            // Use comprehensive KPI data with details, fallback to snapshot for backward compatibility
+            kpiContext = relevantCrewData.kpiData || relevantCrewData.kpiSnapshot;
+            console.log(`✅ Crew data gathered successfully. KPIs: ${relevantCrewData.kpiData?.length || Object.keys(relevantCrewData.kpiSnapshot || {}).length} found`);
           } catch (error: any) {
             console.error(`❌ Failed to gather crew data:`, error.message);
           }
@@ -459,13 +461,29 @@ export class AIOrchestrator {
       // Extract data sources from query understanding
       const dataSources: Array<{ kpi: string; value: any; table: string }> = [];
       if (kpiContext && queryUnderstanding.entities.kpi_codes.length > 0) {
-        for (const kpiCode of queryUnderstanding.entities.kpi_codes) {
-          if (kpiContext[kpiCode] !== undefined) {
-            dataSources.push({
-              kpi: kpiCode,
-              value: kpiContext[kpiCode],
-              table: 'kpi_value',
-            });
+        // Handle both array format (KPIDataWithDetails[]) and object format (KPISnapshot)
+        if (Array.isArray(kpiContext)) {
+          // Comprehensive KPI data format
+          for (const kpiCode of queryUnderstanding.entities.kpi_codes) {
+            const kpiData = kpiContext.find((k: KPIDataWithDetails) => k.kpiCode === kpiCode);
+            if (kpiData) {
+              dataSources.push({
+                kpi: kpiCode,
+                value: kpiData.score,
+                table: kpiData.view,
+              });
+            }
+          }
+        } else {
+          // Legacy snapshot format
+          for (const kpiCode of queryUnderstanding.entities.kpi_codes) {
+            if (kpiContext[kpiCode] !== undefined) {
+              dataSources.push({
+                kpi: kpiCode,
+                value: kpiContext[kpiCode],
+                table: 'kpi_value',
+              });
+            }
           }
         }
       }
@@ -748,16 +766,18 @@ export class AIOrchestrator {
   /**
    * Gather all relevant data for a seafarer
    * Uses crew_code from the crew object to fetch data from other tables
+   * Focuses on comprehensive KPI data with scores and JSON details from all 4 views
    * @param crewOrId Crew master object (with crew_code) OR seafarer ID
-   * @param includeHistory Whether to include historical data
-   * @returns Aggregated crew data
+   * @param includeHistory Whether to include historical data (minimized - focus on KPI data)
+   * @returns Aggregated crew data with comprehensive KPI information
    */
   private async gatherCrewData(
     crewOrId: CrewMaster | number,
     includeHistory: boolean = false
   ): Promise<{
     crew: CrewMaster;
-    kpiSnapshot: KPISnapshot;
+    kpiData: KPIDataWithDetails[];
+    kpiSnapshot: KPISnapshot; // Kept for backward compatibility
     experience: ExperienceHistory[];
     certifications: TrainingCertification[];
     recentEvents: PerformanceEvent[];
@@ -776,40 +796,22 @@ export class AIOrchestrator {
     // Now we have crew object with crew_code, current_rank_name, etc.
     // Use crew_code for vessel_master queries and seafarer_id for other tables
 
-    // Get KPI snapshot (uses seafarer_id internally)
+    // Get comprehensive KPI data with scores and JSON details from all 4 views
+    const kpiData = await KPIRepository.getCrewKPIWithDetails(crew.seafarer_id);
+
+    // Also get KPI snapshot for backward compatibility (used by other methods)
     const kpiSnapshot = await KPIRepository.getCrewKPISnapshot(crew.seafarer_id);
 
-    // Enhance KPI data with metadata from mapping
-    const kpisWithMetadata = Object.entries(kpiSnapshot)
-      .filter(([key]) => key !== 'seafarer_id')
-      .map(([kpiCode, value]) => {
-        const mapping = ALL_KPI_COLUMNS[kpiCode];
-        return {
-          code: kpiCode,
-          value: value,
-          description: mapping?.description || 'Unknown KPI',
-          category: mapping?.category || 'Other',
-        };
-      });
-
-    // Get experience history using crew_code
-    const experience = includeHistory
-      ? await ExperienceRepository.getExperienceHistory(crew.crew_code)
-      : await ExperienceRepository.getRecentExperience(crew.crew_code, 12);
-
-    // Get certifications (uses seafarer_id)
-    const certifications = await TrainingRepository.getCertifications(crew.seafarer_id);
-
-    // Get recent performance events (uses seafarer_id)
-    const recentEvents = await PerformanceRepository.getPerformanceEvents(
-      crew.seafarer_id,
-      undefined,
-      includeHistory ? undefined : new Date(Date.now() - 365 * 24 * 60 * 60 * 1000)
-    );
+    // Minimize other data sources - focus on KPI data from the 4 views
+    // These are already returning empty arrays from repositories, but kept for structure
+    const experience: ExperienceHistory[] = []; // Minimized - KPI data is primary source
+    const certifications: TrainingCertification[] = []; // Minimized - training data in KPI CO0010, CO0011
+    const recentEvents: PerformanceEvent[] = []; // Minimized - performance data in KPI views
 
     return {
       crew,
-      kpiSnapshot,
+      kpiData, // Comprehensive KPI data with scores and details
+      kpiSnapshot, // Kept for backward compatibility
       experience,
       certifications,
       recentEvents,

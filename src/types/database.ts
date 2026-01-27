@@ -352,6 +352,36 @@ export interface KPISnapshot {
 }
 
 /**
+ * Comprehensive KPI data with score and parsed JSON details
+ */
+export interface KPIDataWithDetails {
+  /** KPI code (e.g., "CO0001", "CP0001") */
+  kpiCode: string;
+  /** Numeric KPI score value */
+  score: number | null;
+  /** Parsed JSON object from json_* column (null if no JSON column or parsing fails) */
+  details: any;
+  /** KPI category (e.g., "Experience", "Performance", "Behavioral") */
+  category: string;
+  /** Human-readable description of the KPI */
+  description: string;
+  /** Source view name */
+  view: 'vw_csi_competency' | 'vw_csi_capability' | 'vw_csi_character' | 'vw_csi_collaboration';
+  /** Whether JSON details are available */
+  hasDetails: boolean;
+}
+
+/**
+ * Comprehensive KPI snapshot with all details
+ */
+export interface ComprehensiveKPISnapshot {
+  /** Seafarer ID */
+  seafarer_id: number;
+  /** Array of KPI data with scores and details */
+  kpis: KPIDataWithDetails[];
+}
+
+/**
  * Structured risk evaluation
  */
 export interface RiskAssessment {

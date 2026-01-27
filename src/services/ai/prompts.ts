@@ -7,6 +7,7 @@
 import type {
   CrewMaster,
   KPISnapshot,
+  KPIDataWithDetails,
   KPIDefinition,
   ExperienceHistory,
   TrainingCertification,
@@ -242,6 +243,7 @@ Respond with valid JSON only, no additional text.`;
   /**
    * Chat response prompt
    * Generates natural language responses to user queries
+   * Emphasizes fact-based responses using ONLY KPI data from the 4 views
    */
   static getChatResponsePrompt(data: {
     query: string;
@@ -259,7 +261,43 @@ Respond with valid JSON only, no additional text.`;
           .join('\n')
       : 'No previous conversation';
 
-    return `You are a helpful maritime crew performance analyst assistant. Answer the user's question based on the provided context and conversation history.
+    // Format KPI data clearly - handle both array format (KPIDataWithDetails[]) and object format (KPISnapshot)
+    let kpiDataText = 'No KPI data provided';
+    if (kpiContext) {
+      if (Array.isArray(kpiContext)) {
+        // Comprehensive KPI data format with details
+        kpiDataText = `KPI DATA FROM 4 VIEWS (vw_csi_competency, vw_csi_capability, vw_csi_character, vw_csi_collaboration):
+
+${kpiContext.map((kpi: KPIDataWithDetails) => `
+--- KPI: ${kpi.kpiCode} ---
+Description: ${kpi.description}
+Category: ${kpi.category}
+View: ${kpi.view}
+Score: ${kpi.score !== null && kpi.score !== undefined ? kpi.score : 'N/A'}
+${kpi.hasDetails && kpi.details ? `Details: ${JSON.stringify(kpi.details, null, 2)}` : 'No additional details available'}
+`).join('\n')}`;
+      } else {
+        // Legacy snapshot format
+        kpiDataText = `KPI SNAPSHOT:
+${JSON.stringify(kpiContext, null, 2)}`;
+      }
+    }
+
+    // Format crew data
+    let crewDataText = 'No specific crew data provided';
+    if (relevantCrewData) {
+      const crewInfo = relevantCrewData.crew ? {
+        name: relevantCrewData.crew.seafarer_name,
+        code: relevantCrewData.crew.crew_code,
+        rank: relevantCrewData.crew.current_rank_name,
+        department: relevantCrewData.crew.department_name,
+        status: relevantCrewData.crew.sailing_status,
+      } : null;
+      
+      crewDataText = crewInfo ? JSON.stringify(crewInfo, null, 2) : 'Crew information not available';
+    }
+
+    return `You are a helpful maritime crew performance analyst assistant. Answer the user's question based ONLY on the provided KPI data from the 4 views (vw_csi_competency, vw_csi_capability, vw_csi_character, vw_csi_collaboration).
 
 CONVERSATION HISTORY:
 ${historyText}
@@ -267,8 +305,10 @@ ${historyText}
 CURRENT QUERY:
 ${query}
 
-RELEVANT CREW DATA:
-${relevantCrewData ? JSON.stringify(relevantCrewData, null, 2) : 'No specific crew data provided'}
+CREW INFORMATION:
+${crewDataText}
+
+${kpiDataText}
 
 MULTIPLE CREW DATA (for queries requesting multiple crew members):
 ${multipleCrewData && multipleCrewData.length > 0 
@@ -283,29 +323,38 @@ ${multipleCrewData && multipleCrewData.length > 0
     })), null, 2)
   : 'No multiple crew data provided'}
 
-KPI CONTEXT:
-${kpiContext ? JSON.stringify(kpiContext, null, 2) : 'No specific KPI context provided'}
+CRITICAL INSTRUCTIONS:
+1. **BASE YOUR ANSWER ONLY ON THE PROVIDED KPI DATA** from the 4 views above. Do not use external knowledge or make assumptions.
+2. Reference specific KPI codes, scores, and details when answering (e.g., "CO0001 score is 85" or "CP0001 has details showing...").
+3. If KPI data includes JSON details, use those details to provide specific, factual information.
+4. If data is missing for a specific KPI, acknowledge it explicitly (e.g., "KPI CO0001 data is not available").
+5. Do not infer or assume values that are not in the provided data.
+6. When comparing KPIs, use the actual scores and details provided.
+7. If the query asks about something not covered by the KPI data, state that clearly.
 
 GUIDELINES:
-1. Answer the question directly and concisely
-2. Reference specific data points when available
-3. If MULTIPLE CREW DATA is provided, use it to answer queries about multiple crew members (e.g., "show me high-risk crew members")
+1. Answer the question directly and concisely using ONLY the provided KPI data
+2. Reference specific KPI codes, scores, and details from the data above
+3. If MULTIPLE CREW DATA is provided, use it to answer queries about multiple crew members
 4. When listing multiple crew, provide a clear summary with key information (name, code, rank, risk level, key concerns)
-5. If data is missing, acknowledge it and suggest what information would be helpful
+5. If KPI data is missing, acknowledge it and state what information is not available
 6. Use natural, conversational language
 7. Ask clarifying questions if the query is ambiguous
 8. Provide context and explanations for technical terms
-9. Reference specific KPIs, dates, or events when relevant
-10. If comparing or analyzing, provide balanced perspectives
+9. Reference specific KPIs, scores, and details when relevant
+10. If comparing or analyzing, use only the provided KPI data
 11. Suggest follow-up questions that might be helpful
 12. Maintain professional but friendly tone
 
 RESPONSE FORMAT:
-- Provide a clear, direct answer
-- Include relevant data points and evidence
-- Explain any technical concepts
+- Provide a clear, direct answer based ONLY on the provided KPI data
+- Include specific KPI codes, scores, and details from the data
+- Explain any technical concepts using the provided data
 - Suggest follow-up questions if appropriate
 - If you need more information, ask specific clarifying questions
+- Always cite which KPI codes and data you're using in your response
+
+IMPORTANT: Your response must be based SOLELY on the KPI data provided above. Do not use external knowledge or make assumptions beyond what is in the data.
 
 Respond in natural language, not JSON.`;
   }
