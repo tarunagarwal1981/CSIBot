@@ -196,7 +196,15 @@ export class ClaudeClient {
           jsonText = jsonMatch[1].trim();
         }
 
-        return JSON.parse(jsonText) as T;
+        const parsedData = JSON.parse(jsonText) as T;
+        
+        // Store usage info if available (for potential future use)
+        if (response.usage) {
+          // Usage info is available but not returned in current implementation
+          // Can be accessed via a wrapper if needed
+        }
+
+        return parsedData;
       } catch (parseError: any) {
         console.error('Failed to parse JSON response:', textContent.text);
         throw new Error(`Invalid JSON response from Claude: ${parseError.message}`);

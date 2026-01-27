@@ -457,13 +457,6 @@ export class AIOrchestrator {
         multipleCrewData: multipleCrewData.length > 0 ? multipleCrewData : undefined,
       });
 
-      // Call Claude API
-      const response = await this.claudeClient.complete({
-        messages: [{ role: 'user', content: chatPrompt }],
-        systemPrompt,
-        temperature: 0.7,
-      });
-
       // Get KPI data for formatting (use comprehensive data if available)
       let kpiDataForFormatting: KPIDataWithDetails[] = [];
       if (relevantCrewData && relevantCrewData.kpiData && Array.isArray(relevantCrewData.kpiData)) {
@@ -472,45 +465,37 @@ export class AIOrchestrator {
         kpiDataForFormatting = kpiContext;
       }
 
+      // Call Claude API - use completeJSON for structured output
+      const response = await this.claudeClient.completeJSON<{
+        summary: string;
+        keyFindings: Array<{
+          finding: string;
+          supportingKPIs: string[];
+          severity: 'positive' | 'neutral' | 'concern' | 'critical';
+        }>;
+        riskIndicators: Array<{
+          riskType: string;
+          severity: 'LOW' | 'MEDIUM' | 'HIGH' | 'CRITICAL';
+          description: string;
+          affectedKPIs: string[];
+        }>;
+        recommendedActions: string[];
+        detailedAnalysis?: string;
+      }>({
+        messages: [{ role: 'user', content: chatPrompt }],
+        systemPrompt,
+        temperature: 0.3, // Lower temp for more consistent JSON
+      });
+
       // Format the response using ResponseFormatter
-      let structuredResponse: StructuredChatResponse;
-      try {
-        // Try to parse as JSON first (since we're asking for JSON format)
-        let rawResponseText = response.content.trim();
-        
-        // Remove markdown code blocks if present
-        if (rawResponseText.startsWith('```json')) {
-          rawResponseText = rawResponseText.replace(/^```json\s*/, '').replace(/\s*```$/, '');
-        } else if (rawResponseText.startsWith('```')) {
-          rawResponseText = rawResponseText.replace(/^```\s*/, '').replace(/\s*```$/, '');
-        }
-        
-        // Try to parse JSON
-        try {
-          const parsedJson = JSON.parse(rawResponseText);
-          // If it's already structured, use it
-          structuredResponse = ResponseFormatter.formatStructuredResponse(
-            JSON.stringify(parsedJson),
-            kpiDataForFormatting
-          );
-        } catch {
-          // If not JSON, format the text response
-          structuredResponse = ResponseFormatter.formatStructuredResponse(
-            rawResponseText,
-            kpiDataForFormatting
-          );
-        }
-      } catch (error) {
-        console.warn('Error formatting structured response, using fallback:', error);
-        // Fallback: create minimal structured response
-        structuredResponse = {
-          summary: ResponseFormatter.stripTechnicalCodes(response.content.substring(0, 150)),
-          keyFindings: [],
-          riskIndicators: [],
-          recommendedActions: [],
-          kpiTraceability: ResponseFormatter.extractKPIReferences(response.content, kpiDataForFormatting),
-        };
-      }
+      // Response is already structured JSON from completeJSON()
+      const structuredResponse = ResponseFormatter.formatStructuredResponse(
+        JSON.stringify(response),
+        kpiDataForFormatting
+      );
+
+      // Create a user-friendly text summary for backward compatibility
+      const userFriendlyText = ResponseFormatter.generateUserFriendlyText(structuredResponse);
 
       // Validate structured response
       const validation = validateStructuredResponse(structuredResponse);
@@ -534,53 +519,12 @@ export class AIOrchestrator {
         console.log('✅ Structured response validation passed');
       }
 
-      // Clean the response text (remove technical codes)
-      const cleanedResponse = ResponseFormatter.stripTechnicalCodes(response.content);
-
-      // Extract data sources from query understanding
-      const dataSources: DataSource[] = [];
-      if (kpiContext && queryUnderstanding.entities.kpi_codes.length > 0) {
-        // Handle both array format (KPIDataWithDetails[]) and object format (KPISnapshot)
-        if (Array.isArray(kpiContext)) {
-          // Comprehensive KPI data format
-          for (const kpiCode of queryUnderstanding.entities.kpi_codes) {
-            const kpiData = kpiContext.find((k: KPIDataWithDetails) => k.kpiCode === kpiCode);
-            if (kpiData) {
-              dataSources.push({
-                kpi: kpiCode,
-                value: kpiData.score,
-                table: kpiData.view,
-              });
-            }
-          }
-        } else {
-          // Legacy snapshot format
-          for (const kpiCode of queryUnderstanding.entities.kpi_codes) {
-            if (kpiContext[kpiCode] !== undefined) {
-              dataSources.push({
-                kpi: kpiCode,
-                value: kpiContext[kpiCode],
-                table: 'kpi_value',
-              });
-            }
-          }
-        }
-      }
-
-      // Generate reasoning steps (simplified - could be enhanced)
-      const reasoningSteps = [
-        `Identified intent: ${queryUnderstanding.intent}`,
-        `Extracted entities: ${JSON.stringify(queryUnderstanding.entities)}`,
-        `Retrieved relevant data sources: ${queryUnderstanding.required_data_sources.join(', ')}`,
-        `Generated response based on context and data`,
-      ];
-
       return {
-        response: cleanedResponse,
-        structuredResponse,
-        dataSources: dataSources.length > 0 ? dataSources : undefined,
-        reasoningSteps,
-        tokensUsed: response.usage.inputTokens + response.usage.outputTokens,
+        response: userFriendlyText, // Human-readable text without codes
+        structuredResponse: structuredResponse, // Full structured data
+        reasoningSteps: undefined,
+        dataSources: undefined,
+        tokensUsed: 0, // completeJSON doesn't return usage - would need separate call
         validationErrors: validationErrors,
       };
     } catch (error: any) {

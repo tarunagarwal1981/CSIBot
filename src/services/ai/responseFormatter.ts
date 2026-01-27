@@ -440,4 +440,50 @@ export default class ResponseFormatter {
     
     return undefined;
   }
+
+  /**
+   * Generate user-friendly text from structured response
+   * Converts structured data back to readable narrative
+   */
+  static generateUserFriendlyText(structured: StructuredChatResponse): string {
+    const parts: string[] = [];
+    
+    // Summary
+    parts.push(structured.summary);
+    parts.push(''); // blank line
+    
+    // Key findings
+    if (structured.keyFindings.length > 0) {
+      parts.push('**Key Findings:**');
+      structured.keyFindings.forEach((finding, idx) => {
+        const icon = finding.severity === 'positive' ? '✅' : 
+                     finding.severity === 'concern' ? '⚠️' : 
+                     finding.severity === 'critical' ? '🚨' : '•';
+        parts.push(`${icon} ${finding.finding}`);
+      });
+      parts.push(''); // blank line
+    }
+    
+    // Risk indicators
+    if (structured.riskIndicators && structured.riskIndicators.length > 0) {
+      parts.push('**Risk Indicators:**');
+      structured.riskIndicators.forEach(risk => {
+        const icon = risk.severity === 'CRITICAL' ? '🚨' : 
+                     risk.severity === 'HIGH' ? '⚠️' : 
+                     risk.severity === 'MEDIUM' ? '⚡' : 'ℹ️';
+        parts.push(`${icon} **${risk.riskType}** (${risk.severity}): ${risk.description}`);
+      });
+      parts.push(''); // blank line
+    }
+    
+    // Recommended actions
+    if (structured.recommendedActions.length > 0) {
+      parts.push('**Recommended Actions:**');
+      structured.recommendedActions.forEach((action, idx) => {
+        parts.push(`${idx + 1}. ${action}`);
+      });
+    }
+    
+    return parts.join('\n');
+  }
 }
