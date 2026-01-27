@@ -350,7 +350,7 @@ export interface ChatMessage {
  */
 export interface KPISnapshot {
   seafarer_id: number;
-  [kpiCode: string]: number; // Dynamic KPI values indexed by KPI code
+  [kpiCode: string]: number | null; // Dynamic KPI values indexed by KPI code (null for missing values)
 }
 
 /**
