@@ -13,11 +13,18 @@ import type { PerformanceEvent } from '../../../types/database';
 export class PerformanceRepository {
   /**
    * Get all performance events with optional filtering
+   * Note: Performance data is available in KPI views:
+   * - vw_csi_capability: successful_voyage_performance (CP0001), no_of_days_since_last_failure (CP0002)
+   * - vw_csi_collaboration: negative_inspections_3_years (CL0001), no_of_detentions_3_years (CL0002),
+   *   positive_inspections_3_years (CL0003), major_incidents_in_last_3_years (CL0005)
+   * No separate performance_event table exists in CSI schema.
+   * Performance data is already included in the KPI snapshot.
+   * 
    * @param seafarerId Seafarer ID
-   * @param eventType Optional event type filter ('failure', 'inspection', 'incident', 'appraisal')
-   * @param startDate Optional start date filter
-   * @param endDate Optional end date filter
-   * @returns Array of performance events
+   * @param eventType Optional event type filter (ignored - data is in KPIs)
+   * @param startDate Optional start date filter (ignored - data is in KPIs)
+   * @param endDate Optional end date filter (ignored - data is in KPIs)
+   * @returns Empty array - performance data is in KPI snapshot
    */
   static async getPerformanceEvents(
     seafarerId: number,
@@ -25,49 +32,15 @@ export class PerformanceRepository {
     startDate?: Date,
     endDate?: Date
   ): Promise<PerformanceEvent[]> {
-    let sql = `
-      SELECT 
-        id,
-        seafarer_id,
-        event_type,
-        event_date,
-        category,
-        description,
-        severity,
-        voyage_number,
-        vessel_name,
-        port,
-        authority,
-        outcome,
-        details
-      FROM performance_event
-      WHERE seafarer_id = $1
-    `;
-
-    const params: any[] = [seafarerId];
-    let paramIndex = 2;
-
-    if (eventType) {
-      sql += ` AND event_type = $${paramIndex}`;
-      params.push(eventType);
-      paramIndex++;
-    }
-
-    if (startDate) {
-      sql += ` AND event_date >= $${paramIndex}`;
-      params.push(startDate);
-      paramIndex++;
-    }
-
-    if (endDate) {
-      sql += ` AND event_date <= $${paramIndex}`;
-      params.push(endDate);
-      paramIndex++;
-    }
-
-    sql += ` ORDER BY event_date DESC`;
-
-    return await DatabaseConnection.query<PerformanceEvent>(sql, params);
+    // Performance event data is available in KPI views:
+    // - CP0001: successful_voyage_performance
+    // - CP0002: no_of_days_since_last_failure
+    // - CL0001: negative_inspections_3_years
+    // - CL0002: no_of_detentions_3_years
+    // - CL0003: positive_inspections_3_years
+    // - CL0005: major_incidents_in_last_3_years
+    // No separate performance_event table exists. Return empty array - data is in KPI snapshot.
+    return [];
   }
 
   /**

@@ -13,30 +13,22 @@ import type { TrainingCertification } from '../../../types/database';
 export class TrainingRepository {
   /**
    * Get all certifications for a seafarer
-   * Ordered by issue date (most recent first)
+   * Note: Training data is available in vw_csi_competency as KPIs:
+   * - CO0010: training_matrix_course (training matrix course count)
+   * - CO0011: superior_certificate (superior certificate status)
+   * No separate training_certification table exists in CSI schema.
+   * Training data is already included in the KPI snapshot.
+   * 
    * @param seafarerId Seafarer ID
-   * @returns Array of all training certifications
+   * @returns Empty array - training data is in KPI snapshot
    */
   static async getCertifications(
     seafarerId: number
   ): Promise<TrainingCertification[]> {
-    const sql = `
-      SELECT 
-        id,
-        seafarer_id,
-        course_name,
-        certification_type,
-        issue_date,
-        expiry_date,
-        issuing_authority,
-        status,
-        details
-      FROM training_certification
-      WHERE seafarer_id = $1
-      ORDER BY issue_date DESC
-    `;
-
-    return await DatabaseConnection.query<TrainingCertification>(sql, [seafarerId]);
+    // Training data is available in vw_csi_competency as KPI CO0010 (training_matrix_course)
+    // and CO0011 (superior_certificate). No separate training_certification table exists.
+    // Return empty array - training data is already in KPI snapshot (kpiSnapshot['CO0010'], kpiSnapshot['CO0011'])
+    return [];
   }
 
   /**

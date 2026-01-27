@@ -13,32 +13,37 @@ import type { ExperienceHistory } from '../../../types/database';
 export class ExperienceRepository {
   /**
    * Get all experience history for a seafarer
+   * Uses crew_code to query vw_csi_crew_vessel_master
    * Ordered by most recent first
-   * @param seafarerId Seafarer ID
+   * @param crewCode Crew code
    * @returns Array of experience history records
    */
   static async getExperienceHistory(
-    seafarerId: number
+    crewCode: string
   ): Promise<ExperienceHistory[]> {
     const sql = `
       SELECT 
-        id,
+        ROW_NUMBER() OVER (ORDER BY sign_on_date DESC)::integer as id,
         seafarer_id,
         vessel_name,
-        vessel_imo,
+        imo_number::text as vessel_imo,
         vessel_type,
-        rank,
+        rank_name as rank,
         sign_on_date,
         sign_off_date,
-        tenure_months,
-        experience_type,
-        details
+        COALESCE(
+          EXTRACT(YEAR FROM age(COALESCE(sign_off_date, CURRENT_DATE), sign_on_date)) * 12 +
+          EXTRACT(MONTH FROM age(COALESCE(sign_off_date, CURRENT_DATE), sign_on_date)),
+          0
+        )::integer as tenure_months,
+        NULL::text as experience_type,
+        NULL::jsonb as details
       FROM experience_history
-      WHERE seafarer_id = $1
+      WHERE crew_code = $1
       ORDER BY sign_on_date DESC
     `;
 
-    return await DatabaseConnection.query<ExperienceHistory>(sql, [seafarerId]);
+    return await DatabaseConnection.query<ExperienceHistory>(sql, [crewCode]);
   }
 
   /**
@@ -300,12 +305,13 @@ export class ExperienceRepository {
 
   /**
    * Get recent experience (last N months)
-   * @param seafarerId Seafarer ID
+   * Uses crew_code to query vw_csi_crew_vessel_master
+   * @param crewCode Crew code
    * @param months Number of months to look back (default: 12)
    * @returns Array of recent experience records
    */
   static async getRecentExperience(
-    seafarerId: number,
+    crewCode: string,
     months: number = 12
   ): Promise<ExperienceHistory[]> {
     // Calculate the cutoff date
@@ -314,19 +320,23 @@ export class ExperienceRepository {
 
     const sql = `
       SELECT 
-        id,
+        ROW_NUMBER() OVER (ORDER BY sign_on_date DESC)::integer as id,
         seafarer_id,
         vessel_name,
-        vessel_imo,
+        imo_number::text as vessel_imo,
         vessel_type,
-        rank,
+        rank_name as rank,
         sign_on_date,
         sign_off_date,
-        tenure_months,
-        experience_type,
-        details
+        COALESCE(
+          EXTRACT(YEAR FROM age(COALESCE(sign_off_date, CURRENT_DATE), sign_on_date)) * 12 +
+          EXTRACT(MONTH FROM age(COALESCE(sign_off_date, CURRENT_DATE), sign_on_date)),
+          0
+        )::integer as tenure_months,
+        NULL::text as experience_type,
+        NULL::jsonb as details
       FROM experience_history
-      WHERE seafarer_id = $1
+      WHERE crew_code = $1
         AND (
           sign_on_date >= $2
           OR (sign_off_date IS NULL AND sign_on_date >= $2)
@@ -335,7 +345,7 @@ export class ExperienceRepository {
     `;
 
     return await DatabaseConnection.query<ExperienceHistory>(sql, [
-      seafarerId,
+      crewCode,
       cutoffDate,
     ]);
   }

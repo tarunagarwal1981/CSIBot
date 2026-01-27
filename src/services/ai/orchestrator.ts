@@ -255,6 +255,13 @@ export class AIOrchestrator {
   /**
    * Handle chat query (main chatbot function)
    * Processes natural language queries and generates responses
+   * 
+   * Data Flow:
+   * 1. Extract seafarer name from user query (if present)
+   * 2. Look up crew_master by seafarer_name → get crew_code, current_rank_name, etc.
+   * 3. Use crew_code to fetch data from vessel_master and other tables
+   * 4. For general queries (no seafarer name), relevantCrewData is null and AI handles it
+   * 
    * @param query User query
    * @param sessionId Chat session ID
    * @returns Chat response with data sources and reasoning
@@ -416,9 +423,10 @@ export class AIOrchestrator {
         }
         
         if (crew) {
-          console.log(`📊 Gathering crew data for: ${crew.seafarer_name} (ID: ${crew.seafarer_id})`);
+          console.log(`📊 Gathering crew data for: ${crew.seafarer_name} (Code: ${crew.crew_code}, Rank: ${crew.current_rank_name})`);
           try {
-            relevantCrewData = await this.gatherCrewData(crew.seafarer_id, false);
+            // Pass the crew object so we can use crew_code for all queries
+            relevantCrewData = await this.gatherCrewData(crew, false);
             kpiContext = relevantCrewData.kpiSnapshot;
             console.log(`✅ Crew data gathered successfully. KPIs: ${Object.keys(kpiContext).length} found`);
           } catch (error: any) {
@@ -430,6 +438,8 @@ export class AIOrchestrator {
       }
 
       // Build chat response prompt
+      // Note: For general queries (no seafarer name), relevantCrewData will be null
+      // The AI will handle these queries using its knowledge or ask for clarification
       console.log(`📝 Building prompt. Has relevantCrewData: ${!!relevantCrewData}, Has kpiContext: ${!!kpiContext}`);
       const chatPrompt = PromptTemplates.getChatResponsePrompt({
         query,
@@ -737,12 +747,13 @@ export class AIOrchestrator {
 
   /**
    * Gather all relevant data for a seafarer
-   * @param seafarerId Seafarer ID
+   * Uses crew_code from the crew object to fetch data from other tables
+   * @param crewOrId Crew master object (with crew_code) OR seafarer ID
    * @param includeHistory Whether to include historical data
    * @returns Aggregated crew data
    */
   private async gatherCrewData(
-    seafarerId: number,
+    crewOrId: CrewMaster | number,
     includeHistory: boolean = false
   ): Promise<{
     crew: CrewMaster;
@@ -751,14 +762,22 @@ export class AIOrchestrator {
     certifications: TrainingCertification[];
     recentEvents: PerformanceEvent[];
   }> {
-    // Get crew master info
-    const crew = await CrewRepository.getCrewById(seafarerId);
-    if (!crew) {
-      throw new Error(`Crew member not found: ${seafarerId}`);
+    // Get crew master info if we received an ID
+    let crew: CrewMaster;
+    if (typeof crewOrId === 'number') {
+      crew = await CrewRepository.getCrewById(crewOrId);
+      if (!crew) {
+        throw new Error(`Crew member not found: ${crewOrId}`);
+      }
+    } else {
+      crew = crewOrId;
     }
+    
+    // Now we have crew object with crew_code, current_rank_name, etc.
+    // Use crew_code for vessel_master queries and seafarer_id for other tables
 
-    // Get KPI snapshot
-    const kpiSnapshot = await KPIRepository.getCrewKPISnapshot(seafarerId);
+    // Get KPI snapshot (uses seafarer_id internally)
+    const kpiSnapshot = await KPIRepository.getCrewKPISnapshot(crew.seafarer_id);
 
     // Enhance KPI data with metadata from mapping
     const kpisWithMetadata = Object.entries(kpiSnapshot)
@@ -773,17 +792,17 @@ export class AIOrchestrator {
         };
       });
 
-    // Get experience history
+    // Get experience history using crew_code
     const experience = includeHistory
-      ? await ExperienceRepository.getExperienceHistory(seafarerId)
-      : await ExperienceRepository.getRecentExperience(seafarerId, 12);
+      ? await ExperienceRepository.getExperienceHistory(crew.crew_code)
+      : await ExperienceRepository.getRecentExperience(crew.crew_code, 12);
 
-    // Get certifications
-    const certifications = await TrainingRepository.getCertifications(seafarerId);
+    // Get certifications (uses seafarer_id)
+    const certifications = await TrainingRepository.getCertifications(crew.seafarer_id);
 
-    // Get recent performance events
+    // Get recent performance events (uses seafarer_id)
     const recentEvents = await PerformanceRepository.getPerformanceEvents(
-      seafarerId,
+      crew.seafarer_id,
       undefined,
       includeHistory ? undefined : new Date(Date.now() - 365 * 24 * 60 * 60 * 1000)
     );
