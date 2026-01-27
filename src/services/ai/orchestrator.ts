@@ -10,12 +10,9 @@ import ResponseFormatter from './responseFormatter';
 import { validateStructuredResponse } from '../../utils/responseValidation';
 import { CrewRepository } from '../database/repositories/crewRepository';
 import { KPIRepository } from '../database/repositories/kpiRepository';
-import { ExperienceRepository } from '../database/repositories/experienceRepository';
-import { TrainingRepository } from '../database/repositories/trainingRepository';
 import { PerformanceRepository } from '../database/repositories/performanceRepository';
 import { SummaryRepository } from '../database/repositories/summaryRepository';
 import { ChatRepository } from '../database/repositories/chatRepository';
-import { ALL_KPI_COLUMNS } from '../../config/kpiColumnMapping';
 import type {
   AISummary,
   CrewMaster,
@@ -833,7 +830,7 @@ export class AIOrchestrator {
    */
   private async gatherCrewData(
     crewOrId: CrewMaster | number,
-    includeHistory: boolean = false
+    _includeHistory: boolean = false
   ): Promise<{
     crew: CrewMaster;
     kpiData: KPIDataWithDetails[];

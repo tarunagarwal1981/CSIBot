@@ -13,7 +13,6 @@ import type {
 import type { KPIDataWithDetails } from '../../types/database';
 import {
   getKPIColumnMapping,
-  ALL_KPI_COLUMNS,
 } from '../../config/kpiColumnMapping';
 
 /**
@@ -224,7 +223,7 @@ export default class ResponseFormatter {
    */
   private static extractKeyFindings(
     rawResponse: string,
-    kpiData: KPIDataWithDetails[]
+    _kpiData: KPIDataWithDetails[]
   ): KeyFinding[] {
     const findings: KeyFinding[] = [];
     
@@ -322,7 +321,7 @@ export default class ResponseFormatter {
    */
   private static extractRiskIndicators(
     rawResponse: string,
-    kpiData: KPIDataWithDetails[]
+    _kpiData: KPIDataWithDetails[]
   ): RiskIndicatorSummary[] {
     const risks: RiskIndicatorSummary[] = [];
     
@@ -477,7 +476,7 @@ export default class ResponseFormatter {
     // Key findings
     if (structured.keyFindings.length > 0) {
       parts.push('**Key Findings:**');
-      structured.keyFindings.forEach((finding, idx) => {
+      structured.keyFindings.forEach((finding) => {
         const icon = finding.severity === 'positive' ? '✅' : 
                      finding.severity === 'concern' ? '⚠️' : 
                      finding.severity === 'critical' ? '🚨' : '•';
