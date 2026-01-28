@@ -463,11 +463,10 @@ export class AIOrchestrator {
       }
 
       // Call Claude API with JSON output
-      let structuredResponse: StructuredChatResponse;
       let tokensUsed = 0;
       
       try {
-        // Try to get structured JSON response
+        // Get structured JSON response from Claude
         const jsonResponse = await this.claudeClient.completeJSON<{
           summary: string;
           keyFindings: Array<{
@@ -486,50 +485,83 @@ export class AIOrchestrator {
         }>({
           messages: [{ role: 'user', content: chatPrompt }],
           systemPrompt,
-          temperature: 0.3, // Lower temp for structured output
+          temperature: 0.3,
         });
 
-        // Format the response using ResponseFormatter
-        structuredResponse = ResponseFormatter.formatStructuredResponse(
-          JSON.stringify(jsonResponse),
-          kpiDataForFormatting
-        );
+        console.log('✅ Claude API returned structured JSON');
+
+        // Build StructuredChatResponse with KPI codes stripped
+        const structuredResponse: StructuredChatResponse = {
+          summary: ResponseFormatter.stripTechnicalCodes(jsonResponse.summary),
+          keyFindings: jsonResponse.keyFindings.slice(0, 5).map(f => ({
+            finding: ResponseFormatter.stripTechnicalCodes(f.finding),
+            supportingKPIs: f.supportingKPIs,
+            severity: f.severity,
+          })),
+          riskIndicators: jsonResponse.riskIndicators.map(r => ({
+            riskType: r.riskType,
+            severity: r.severity,
+            description: ResponseFormatter.stripTechnicalCodes(r.description),
+            affectedKPIs: r.affectedKPIs,
+          })),
+          recommendedActions: jsonResponse.recommendedActions.slice(0, 3).map(a =>
+            ResponseFormatter.stripTechnicalCodes(a)
+          ),
+          kpiTraceability: ResponseFormatter.extractKPIReferences(
+            JSON.stringify(jsonResponse),
+            kpiDataForFormatting
+          ),
+          detailedAnalysis: jsonResponse.detailedAnalysis
+            ? ResponseFormatter.stripTechnicalCodes(jsonResponse.detailedAnalysis)
+            : undefined,
+        };
 
         // Validate the response
         const validation = validateStructuredResponse(structuredResponse);
         if (!validation.valid) {
           console.warn('⚠️ Structured response validation failed:', validation.errors);
-          
-          // Check for critical errors (KPI codes in user-facing text)
-          const hasCriticalErrors = validation.errors.some(err => 
-            err.includes('contains KPI codes')
-          );
-          
-          if (hasCriticalErrors) {
-            console.log('🔄 Critical validation errors detected - applying post-processing fix');
-            
-            // Force strip KPI codes from all user-facing text
-            structuredResponse.summary = ResponseFormatter.stripTechnicalCodes(structuredResponse.summary);
-            structuredResponse.keyFindings = structuredResponse.keyFindings.map(f => ({
-              ...f,
-              finding: ResponseFormatter.stripTechnicalCodes(f.finding)
-            }));
-            structuredResponse.recommendedActions = structuredResponse.recommendedActions.map(
-              a => ResponseFormatter.stripTechnicalCodes(a)
-            );
-            structuredResponse.riskIndicators = structuredResponse.riskIndicators.map(r => ({
-              ...r,
-              description: ResponseFormatter.stripTechnicalCodes(r.description)
-            }));
-            
-            console.log('✅ Post-processing completed - KPI codes stripped');
-          }
         } else {
           console.log('✅ Response validation passed');
         }
 
-        // Generate user-friendly text for display
-        const userFriendlyText = ResponseFormatter.generateUserFriendlyText(structuredResponse);
+        // Generate PLAIN TEXT for display (not JSON!)
+        const parts: string[] = [];
+        
+        parts.push(structuredResponse.summary);
+        parts.push('');
+        
+        if (structuredResponse.keyFindings.length > 0) {
+          parts.push('**Key Findings:**');
+          structuredResponse.keyFindings.forEach(finding => {
+            const icon = finding.severity === 'positive' ? '✅' : 
+                         finding.severity === 'concern' ? '⚠️' : 
+                         finding.severity === 'critical' ? '🚨' : '•';
+            parts.push(`${icon} ${finding.finding}`);
+          });
+          parts.push('');
+        }
+        
+        if (structuredResponse.riskIndicators && structuredResponse.riskIndicators.length > 0) {
+          parts.push('**Risk Assessment:**');
+          structuredResponse.riskIndicators.forEach(risk => {
+            const icon = risk.severity === 'CRITICAL' ? '🚨' : 
+                         risk.severity === 'HIGH' ? '⚠️' : 
+                         risk.severity === 'MEDIUM' ? '⚡' : 'ℹ️';
+            parts.push(`${icon} ${risk.riskType} (${risk.severity}): ${risk.description}`);
+          });
+          parts.push('');
+        }
+        
+        if (structuredResponse.recommendedActions.length > 0) {
+          parts.push('**Recommended Actions:**');
+          structuredResponse.recommendedActions.forEach((action, idx) => {
+            parts.push(`${idx + 1}. ${action}`);
+          });
+        }
+        
+        const userFriendlyText = parts.join('\n');
+        
+        console.log('✅ Generated user-friendly text:', userFriendlyText.substring(0, 200));
 
         return {
           response: userFriendlyText,
@@ -540,24 +572,8 @@ export class AIOrchestrator {
         };
 
       } catch (error: any) {
-        console.error('❌ Error generating structured response:', error);
-        
-        // Fallback to regular completion
-        const fallbackResponse = await this.claudeClient.complete({
-          messages: [{ role: 'user', content: chatPrompt }],
-          systemPrompt,
-          temperature: 0.7,
-        });
-        
-        tokensUsed = fallbackResponse.usage.inputTokens + fallbackResponse.usage.outputTokens;
-        
-        return {
-          response: ResponseFormatter.stripTechnicalCodes(fallbackResponse.content),
-          structuredResponse: undefined,
-          reasoningSteps: undefined,
-          dataSources: undefined,
-          tokensUsed: tokensUsed,
-        };
+        console.error('❌ Error in chat query processing:', error);
+        throw error;
       }
     } catch (error: any) {
       console.error('Error handling chat query:', error);

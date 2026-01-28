@@ -10,7 +10,7 @@ import type { StructuredChatResponse } from '../types/chatResponse';
 
 export interface Message {
   role: 'user' | 'assistant';
-  content: string;
+  content: string | object; // Allow object for parsed JSON
   timestamp: string;
   structuredData?: StructuredChatResponse;
   dataSources?: Array<{ kpi: string; value: any; table: string }>;
@@ -24,11 +24,29 @@ interface MessageBubbleProps {
 /**
  * Render assistant message with proper formatting
  */
-function renderAssistantMessage(content: string, structuredData?: StructuredChatResponse) {
-  // If content is accidentally a JSON string, try to extract readable text
-  if (content.startsWith('{') && content.includes('"summary"')) {
+function renderAssistantMessage(content: string | object, structuredData?: StructuredChatResponse) {
+  // If content is an object, convert it to structured data
+  if (typeof content === 'object' && content !== null) {
+    const obj = content as any;
+    if (obj.summary || obj.keyFindings) {
+      // Use it as structured data if we don't have one already
+      if (!structuredData) {
+        structuredData = obj as StructuredChatResponse;
+      }
+      return <StructuredMessageView data={structuredData || obj} />;
+    }
+    // Otherwise convert to string
+    content = JSON.stringify(content, null, 2);
+  }
+  
+  // If content is a string and looks like JSON, try to parse it
+  if (typeof content === 'string' && content.startsWith('{') && content.includes('"summary"')) {
     try {
       const parsed = JSON.parse(content);
+      if (!structuredData && (parsed.summary || parsed.keyFindings)) {
+        structuredData = parsed;
+        return <StructuredMessageView data={parsed} />;
+      }
       content = formatStructuredContent(parsed);
     } catch (e) {
       // If parsing fails, try to extract just the summary
@@ -46,7 +64,7 @@ function renderAssistantMessage(content: string, structuredData?: StructuredChat
 
   // Otherwise, render the text content with markdown-style formatting
   return <div className="prose prose-sm max-w-none dark:prose-invert">
-    {formatTextContent(content)}
+    {formatTextContent(content as string)}
   </div>;
 }
 

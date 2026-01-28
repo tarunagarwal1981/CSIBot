@@ -8,6 +8,7 @@ import { useState, useEffect, useRef } from 'react';
 import { Send, Bot, Loader, RotateCw, Trash2, Download } from 'lucide-react';
 import { MessageBubble, type Message } from './MessageBubble';
 import { TypingIndicator } from './TypingIndicator';
+import type { StructuredChatResponse } from '../types/chatResponse';
 
 /**
  * Format structured response for display
@@ -150,18 +151,39 @@ export function ChatInterface() {
       }
 
       // Extract the text response (not the structured JSON)
-      let displayContent = data.response;
-      
-      // If response is still JSON string, extract the user-friendly text
-      if (displayContent.startsWith('{') && displayContent.includes('"summary"')) {
+      let displayContent: string | object = data.response;
+      let structuredData = data.structuredResponse;
+
+      // Check if response is an object (already parsed JSON) or a JSON string
+      if (typeof displayContent === 'object' && displayContent !== null) {
+        // If response is already an object with structured data
+        if ('summary' in displayContent || 'keyFindings' in displayContent) {
+          // Use it as structured data if we don't have one already
+          if (!structuredData) {
+            structuredData = displayContent as StructuredChatResponse;
+          }
+          // Format for display
+          displayContent = formatStructuredForDisplay(structuredData || displayContent as StructuredChatResponse);
+        } else {
+          // Convert object to string for display
+          displayContent = JSON.stringify(displayContent, null, 2);
+        }
+      } else if (typeof displayContent === 'string' && displayContent.trim().startsWith('{')) {
+        // If response is a JSON string, parse it
         try {
           const parsed = JSON.parse(displayContent);
-          // Use the structured response if available
+          // If we have structuredResponse from API, use it
           if (data.structuredResponse) {
-            // Format for display
+            structuredData = data.structuredResponse;
             displayContent = formatStructuredForDisplay(data.structuredResponse);
-          } else {
-            // Fallback: extract summary and key findings
+          } 
+          // If parsed JSON has the structure we expect, create structuredData
+          else if (parsed.summary || parsed.keyFindings) {
+            structuredData = parsed;
+            displayContent = formatStructuredForDisplay(parsed);
+          } 
+          // Fallback: just extract summary
+          else {
             displayContent = parsed.summary || displayContent;
           }
         } catch (e) {
@@ -169,12 +191,20 @@ export function ChatInterface() {
           // Use as-is if parsing fails
         }
       }
+      // If we have structuredResponse but response is already formatted text
+      else if (data.structuredResponse && typeof displayContent === 'string' && !displayContent.includes('**Key Findings:**')) {
+        displayContent = formatStructuredForDisplay(data.structuredResponse);
+        structuredData = data.structuredResponse;
+      }
+
+      // Ensure displayContent is a string for the Message interface
+      const finalContent = typeof displayContent === 'string' ? displayContent : JSON.stringify(displayContent, null, 2);
       
       const assistantMessage: Message = {
         role: 'assistant',
-        content: displayContent,
+        content: finalContent,
         timestamp: data.timestamp || new Date().toISOString(),
-        structuredData: data.structuredResponse, // Store for enhanced display
+        structuredData: structuredData, // Store for enhanced display
         dataSources: data.dataSources,
         reasoningSteps: data.reasoningSteps,
       };
