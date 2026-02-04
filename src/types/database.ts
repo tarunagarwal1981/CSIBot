@@ -4,7 +4,7 @@
  */
 
 /**
- * Crew master record containing seafarer information
+ * Crew master data from vw_csi_crew_master
  */
 export interface CrewMaster {
   /** Primary key - unique seafarer identifier */
@@ -14,19 +14,57 @@ export interface CrewMaster {
   /** Full name of the seafarer */
   seafarer_name: string;
   /** Email address */
-  email_id: string;
+  email_id: string | null;
   /** Current rank/title */
   current_rank_name: string;
   /** Contact phone number */
-  contact_number: string;
+  contact_number: string | null;
   /** Current sailing status */
   sailing_status: 'atsea' | 'onleave';
   /** Department name */
   department_name: string;
   /** POD (Personnel on Duty) name */
-  pod_name: string;
+  pod_name: string | null;
   /** Record creation timestamp */
   created_at: Date;
+  /** Record last update timestamp */
+  updated_at: Date;
+  /** Current vessel name - populated from vw_csi_crew_vessel_master */
+  current_vessel_name?: string | null;
+  /** Current vessel sign-on date - populated from vw_csi_crew_vessel_master */
+  current_vessel_sign_on_date?: Date | null;
+}
+
+/**
+ * Vessel assignment data from vw_csi_crew_vessel_master
+ */
+export interface VesselAssignment {
+  /** Crew code identifier */
+  crew_code: string;
+  /** Vessel name */
+  vessel_name: string;
+  /** Contract start date */
+  contract_start_date: Date | null;
+  /** Contract end date */
+  contract_end_date: Date | null;
+  /** Foreign key to CrewMaster */
+  seafarer_id: number;
+  /** Rank name during assignment */
+  rank_name: string;
+  /** IMO number of the vessel */
+  imo_number: number | null;
+  /** Type of vessel */
+  vessel_type: string | null;
+  /** Sign-on date */
+  sign_on_date: Date;
+  /** Sign-off date, null if currently on board */
+  sign_off_date: Date | null;
+  /** Vessel category */
+  vessel_category: string | null;
+  /** Vessel code */
+  vessel_code: string | null;
+  /** Ship owner */
+  ship_owner: string | null;
   /** Record last update timestamp */
   updated_at: Date;
 }

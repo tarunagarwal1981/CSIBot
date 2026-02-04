@@ -427,6 +427,16 @@ export class AIOrchestrator {
         }
         
         if (crew) {
+          // ORCHESTRATOR - Log crew fetched from repository
+          console.log('🎯 ORCHESTRATOR - Crew fetched:', {
+            seafarer_id: crew.seafarer_id,
+            name: crew.seafarer_name,
+            sailing_status: crew.sailing_status,
+            current_vessel_name: crew.current_vessel_name || 'NULL',
+            current_vessel_sign_on_date: crew.current_vessel_sign_on_date || 'NULL',
+            pod_name: crew.pod_name
+          });
+          
           console.log(`📊 Gathering crew data for: ${crew.seafarer_name} (Code: ${crew.crew_code}, Rank: ${crew.current_rank_name})`);
           try {
             // Pass the crew object so we can use crew_code for all queries
@@ -434,6 +444,18 @@ export class AIOrchestrator {
             // Use comprehensive KPI data with details, fallback to snapshot for backward compatibility
             kpiContext = relevantCrewData.kpiData || relevantCrewData.kpiSnapshot;
             console.log(`✅ Crew data gathered successfully. KPIs: ${relevantCrewData.kpiData?.length || Object.keys(relevantCrewData.kpiSnapshot || {}).length} found`);
+            
+            // ORCHESTRATOR - Log crew data after gathering
+            if (relevantCrewData.crew) {
+              console.log('🎯 ORCHESTRATOR - Crew data after gatherCrewData:', {
+                seafarer_id: relevantCrewData.crew.seafarer_id,
+                name: relevantCrewData.crew.seafarer_name,
+                sailing_status: relevantCrewData.crew.sailing_status,
+                current_vessel_name: relevantCrewData.crew.current_vessel_name || 'NULL',
+                current_vessel_sign_on_date: relevantCrewData.crew.current_vessel_sign_on_date || 'NULL',
+                pod_name: relevantCrewData.crew.pod_name
+              });
+            }
           } catch (error: any) {
             console.error(`❌ Failed to gather crew data:`, error.message);
           }
@@ -863,8 +885,28 @@ export class AIOrchestrator {
         throw new Error(`Crew member not found: ${crewOrId}`);
       }
       crew = crewResult;
+      
+      // ORCHESTRATOR - Log crew fetched in gatherCrewData
+      console.log('🎯 ORCHESTRATOR - gatherCrewData - Crew fetched by ID:', {
+        seafarer_id: crew.seafarer_id,
+        name: crew.seafarer_name,
+        sailing_status: crew.sailing_status,
+        current_vessel_name: crew.current_vessel_name || 'NULL',
+        current_vessel_sign_on_date: crew.current_vessel_sign_on_date || 'NULL',
+        pod_name: crew.pod_name
+      });
     } else {
       crew = crewOrId;
+      
+      // ORCHESTRATOR - Log crew passed directly to gatherCrewData
+      console.log('🎯 ORCHESTRATOR - gatherCrewData - Crew passed directly:', {
+        seafarer_id: crew.seafarer_id,
+        name: crew.seafarer_name,
+        sailing_status: crew.sailing_status,
+        current_vessel_name: crew.current_vessel_name || 'NULL',
+        current_vessel_sign_on_date: crew.current_vessel_sign_on_date || 'NULL',
+        pod_name: crew.pod_name
+      });
     }
     
     // Now we have crew object with crew_code, current_rank_name, etc.

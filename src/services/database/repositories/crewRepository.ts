@@ -21,9 +21,9 @@ import type {
  */
 export class CrewRepository {
   /**
-   * Get crew master information by seafarer ID
+   * Get crew member by seafarer ID with current vessel assignment
    * @param seafarerId Seafarer ID
-   * @returns Crew master record or null if not found
+   * @returns Crew master data with current vessel name, or null if not found
    */
   static async getCrewById(seafarerId: number): Promise<CrewMaster | null> {
     const sql = `
@@ -37,13 +37,90 @@ export class CrewRepository {
         sailing_status,
         department_name,
         pod_name,
-        updated_at AS created_at,
+        synergy_experience_in_months,
+        current_rank_experience_in_months,
         updated_at
-      FROM crew_master
+      FROM vw_csi_crew_master
       WHERE seafarer_id = $1
     `;
 
-    return await DatabaseConnection.queryOne<CrewMaster>(sql, [seafarerId]);
+    const crew = await DatabaseConnection.queryOne<CrewMaster>(sql, [seafarerId]);
+    
+    if (!crew) {
+      console.log('❌ No crew member found for seafarer_id:', seafarerId);
+      return null;
+    }
+
+    console.log('✅ Crew member found:', {
+      seafarer_id: crew.seafarer_id,
+      name: crew.seafarer_name,
+      sailing_status: crew.sailing_status
+    });
+
+    // Fetch current vessel assignment from vw_csi_crew_vessel_master
+    const vesselAssignment = await this.getCurrentVesselAssignment(seafarerId);
+    
+    if (vesselAssignment) {
+      crew.current_vessel_name = vesselAssignment.vessel_name;
+      crew.current_vessel_sign_on_date = vesselAssignment.sign_on_date;
+      console.log('✅ Attached vessel to crew:', {
+        vessel_name: vesselAssignment.vessel_name,
+        sign_on_date: vesselAssignment.sign_on_date
+      });
+    } else {
+      crew.current_vessel_name = null;
+      crew.current_vessel_sign_on_date = null;
+      console.log('ℹ️  No active vessel assignment for this crew member');
+    }
+
+    console.log('🔍 FINAL CREW OBJECT:', {
+      seafarer_id: crew.seafarer_id,
+      name: crew.seafarer_name,
+      sailing_status: crew.sailing_status,
+      current_vessel_name: crew.current_vessel_name,
+      current_vessel_sign_on_date: crew.current_vessel_sign_on_date
+    });
+
+    return crew;
+  }
+
+  /**
+   * Get current vessel assignment for a crew member
+   * Queries vw_csi_crew_vessel_master for active assignment (sign_off_date IS NULL)
+   * 
+   * @param seafarerId Seafarer ID
+   * @returns Current vessel assignment or null if not assigned
+   */
+  static async getCurrentVesselAssignment(
+    seafarerId: number
+  ): Promise<{ vessel_name: string; sign_on_date: Date } | null> {
+    const sql = `
+      SELECT 
+        vessel_name,
+        sign_on_date
+      FROM vw_csi_crew_vessel_master
+      WHERE seafarer_id = $1
+        AND sign_off_date IS NULL  -- Active assignment (currently onboard)
+      ORDER BY sign_on_date DESC   -- Most recent if multiple (edge case)
+      LIMIT 1
+    `;
+
+    const result = await DatabaseConnection.queryOne<{
+      vessel_name: string;
+      sign_on_date: Date;
+    }>(sql, [seafarerId]);
+
+    if (result) {
+      console.log('🚢 Current vessel assignment found:', {
+        seafarer_id: seafarerId,
+        vessel_name: result.vessel_name,
+        sign_on_date: result.sign_on_date
+      });
+    } else {
+      console.log('🚢 No active vessel assignment for seafarer_id:', seafarerId);
+    }
+
+    return result;
   }
 
   /**

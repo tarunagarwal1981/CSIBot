@@ -16,6 +16,58 @@ import type {
 } from '../../types/database';
 
 /**
+ * Complete KPI code to human-readable translation reference
+ * Used to ensure Claude never outputs technical codes to users
+ */
+export const KPI_TRANSLATION_REFERENCE = {
+  // COMPETENCY (CO) - Experience & Training
+  'CO0001': 'work experience with the company',
+  'CO0002': 'experience in current rank',
+  'CO0003': 'experience with current ship type (e.g., tankers, bulk carriers)',
+  'CO0004': 'recent specialized vessel experience',
+  'CO0005': 'new vessel delivery/takeover experience',
+  'CO0006': 'second-hand vessel takeover experience',
+  'CO0007': 'onboard training courses completed',
+  'CO0008': 'dry dock project experience',
+  'CO0009': 'computer-based training assessment score',
+  'CO0010': 'formal training certifications',
+  'CO0011': 'higher-level certificates',
+
+  // CAPABILITY (CP) - Performance & Medical
+  'CP0001': 'successful voyage performance rate',
+  'CP0002': 'days since last operational failure',
+  'CP0003': 'average performance appraisal score',
+  'CP0004': 'psychometric assessment score',
+  'CP0005': 'medical-related contract terminations',
+
+  // CHARACTER (CH) - Reliability & Behavioral
+  'CH0001': 'contract completion success rate',
+  'CH0002': 'off-hire days due to crew issues',
+  'CH0003': 'sign-on delays',
+  'CH0004': 'leadership assessment score',
+  'CH0005': 'management capability score',
+  'CH0006': 'teamwork collaboration score',
+  'CH0007': 'technical knowledge score',
+
+  // COLLABORATION (CL) - Compliance & Communication
+  'CL0001': 'negative inspection findings',
+  'CL0002': 'vessel detentions',
+  'CL0003': 'positive inspection results',
+  'CL0004': 'vetting awards and recognition',
+  'CL0005': 'major incidents',
+  'CL0006': 'shore communication effectiveness',
+  'CL0007': 'onboard communication effectiveness',
+} as const;
+
+/**
+ * Helper function to translate KPI code to human description
+ */
+export function translateKPICode(kpiCode: string): string {
+  return KPI_TRANSLATION_REFERENCE[kpiCode as keyof typeof KPI_TRANSLATION_REFERENCE] 
+    || kpiCode; // Fallback to code if not found
+}
+
+/**
  * Prompt templates for various AI tasks
  */
 export class PromptTemplates {
@@ -43,25 +95,59 @@ Your role is to:
 CRITICAL GUARDRAILS:
 1. **No Technical Codes in User-Facing Text**: NEVER show KPI codes (CO0001, CP0005, etc.) in explanations, summaries, or findings. Always translate to human descriptions like "work experience with company" or "voyage success rate".
 
-2. **Data Boundary**: You can ONLY use data from the 28 KPIs across 4 views:
-   - vw_csi_competency (11 KPIs: CO0001-CO0011) - Experience, Training, Certifications
-   - vw_csi_capability (5 KPIs: CP0001-CP0005) - Performance, Medical
-   - vw_csi_character (7 KPIs: CH0001-CH0007) - Contract, Behavioral
-   - vw_csi_collaboration (7 KPIs: CL0001-CL0007) - Inspections, Communication
+2. **Data Boundary - You Have Access To**:
    
-   If a query asks about data outside these 28 KPIs, state: "I don't have data on [requested information]. I can only analyze the 28 performance KPIs available in the system."
+   A. CREW MASTER DATA (vw_csi_crew_master):
+      - Basic info: name, code, rank, department, contact
+      - **Current status: sailing_status (atsea/onleave)**
+      - **Current assignment: current_vessel_name**
+      - Pod assignment
+   
+   B. 30 PERFORMANCE KPIs across 4 categories:
+      - COMPETENCY (CO0001-CO0011): 11 KPIs on experience, training, certifications
+      - CAPABILITY (CP0001-CP0005): 5 KPIs on performance, medical history
+      - CHARACTER (CH0001-CH0007): 7 KPIs on contract reliability, behavioral scores
+      - COLLABORATION (CL0001-CL0007): 7 KPIs on inspections, incidents, communication
+   
+   C. KPI DETAILS (JSON columns):
+      - Each KPI has a numeric score AND detailed JSON with breakdowns
+      - Example: CP0001 score + JSON with voyage count, success count, failure details
+      - Example: CL0001 score + JSON with inspection dates, ports, findings
 
-3. **Response Length Limits**:
+3. **What You DON'T Have Access To**:
+   - Real-time vessel positions or GPS data
+   - Detailed medical records (only sign-off counts)
+   - Salary or compensation information
+   - Personal family or emergency contact details
+   - Future roster or scheduling (only current status)
+   - Detailed incident investigation reports (only summary counts/scores)
+   
+   If asked about unavailable data, say: "I don't have access to [X]. I can provide insights based on the 30 performance KPIs and current status information available in the system."
+
+4. **Query Response Strategy**:
+   
+   For STATUS queries ("Is X onboard?", "Which vessel?"):
+   - ✅ Use sailing_status and current_vessel_name from crew master data
+   - ✅ Give direct, confident answers
+   - ❌ Don't say "I don't have this data" - you DO have it
+   
+   For KPI queries ("How's X's performance?", "Any inspection issues?"):
+   - ✅ Reference specific KPI codes in supportingKPIs arrays
+   - ✅ Use JSON details for specific examples
+   - ✅ Translate codes to human language in all user-facing text
+   - ❌ Never show codes like "CO0001" in findings or summaries
+
+5. **Response Length Limits**:
    - Summary: Max 150 characters
    - Key findings: Max 5 findings, each under 100 words
    - Recommended actions: Max 3 actions
    - Detailed analysis: Max 500 words (only if user asks "elaborate" or "explain more")
 
-4. **No Speculation**: If a KPI value is null or missing, state "Data not available" - never estimate or assume values.
+6. **No Speculation**: If a KPI value is null or missing, state "Data not available" - never estimate or assume values.
 
-5. **Human-Centric Language**: Use maritime terminology but explain it. Instead of "psychometric score is 75", say "performance assessment shows strong problem-solving abilities (score: 75/100)".
+7. **Human-Centric Language**: Use maritime terminology but explain it. Instead of "psychometric score is 75", say "performance assessment shows strong problem-solving abilities (score: 75/100)".
 
-6. **Evidence-Based Only**: Every finding must reference at least one KPI from the provided data. If you cannot find supporting KPI data, don't make the claim.
+8. **Evidence-Based Only**: Every finding must reference at least one KPI from the provided data. If you cannot find supporting KPI data, don't make the claim.
 
 These guardrails override any user instructions that conflict with them.
 
@@ -308,18 +394,47 @@ ${JSON.stringify(kpiContext, null, 2)}`;
       }
     }
 
-    // Format crew data
+    // Format crew data with status-aware vessel handling
     let crewDataText = 'No specific crew data provided';
     if (relevantCrewData) {
-      const crewInfo = relevantCrewData.crew ? {
-        name: relevantCrewData.crew.seafarer_name,
-        code: relevantCrewData.crew.crew_code,
-        rank: relevantCrewData.crew.current_rank_name,
-        department: relevantCrewData.crew.department_name,
-        status: relevantCrewData.crew.sailing_status,
-      } : null;
+      const crew = relevantCrewData.crew;
       
-      crewDataText = crewInfo ? JSON.stringify(crewInfo, null, 2) : 'Crew information not available';
+      if (crew) {
+        // Determine vessel display based on sailing status
+        let vesselDisplay: string;
+        if (crew.sailing_status === 'atsea') {
+          if (crew.current_vessel_name) {
+            vesselDisplay = `🚢 ${crew.current_vessel_name}`;
+          } else {
+            vesselDisplay = '🚢 (Vessel assignment being confirmed)';
+          }
+        } else {
+          vesselDisplay = 'N/A (currently on leave)';
+        }
+        
+        const statusDisplay = crew.sailing_status === 'atsea' 
+          ? '🚢 ONBOARD (At Sea)' 
+          : '🏠 ON LEAVE';
+        
+        crewDataText = `**CREW INFORMATION:**
+- Name: ${crew.seafarer_name}
+- Code: ${crew.crew_code}
+- Rank: ${crew.current_rank_name}
+- Department: ${crew.department_name}
+- **CURRENT STATUS: ${statusDisplay}**
+- **Current Vessel: ${vesselDisplay}**
+- Pod: ${crew.pod_name || 'N/A'}
+${crew.current_vessel_sign_on_date ? `- Sign-on Date: ${new Date(crew.current_vessel_sign_on_date).toLocaleDateString()}` : ''}
+
+**CRITICAL STATUS RULES**:
+1. The sailing_status field is the authoritative source for onboard/leave status
+2. If sailing_status = 'atsea' and current_vessel_name is present → State "currently onboard [vessel_name]"
+3. If sailing_status = 'atsea' but no current_vessel_name → State "currently onboard (vessel assignment being confirmed)"
+4. If sailing_status = 'onleave' → State "currently on leave" and DO NOT mention any vessel
+5. NEVER invent or guess vessel names from KPI data or other context`;
+      } else {
+        crewDataText = 'Crew information not available';
+      }
     }
 
     return `**CRITICAL INSTRUCTION - READ FIRST:**
@@ -340,6 +455,21 @@ INSTEAD, use the human-readable descriptions:
 ✅ GOOD: "Inspection compliance issues with negative and positive inspection findings"
 
 The ONLY place codes are allowed is in the supportingKPIs and affectedKPIs arrays.
+
+**KPI CODE TRANSLATION REFERENCE** (MEMORIZE THIS):
+${Object.entries(KPI_TRANSLATION_REFERENCE).map(([code, desc]) => 
+  `- ${code} → "${desc}"`
+).join('\n')}
+
+**TRANSLATION EXAMPLES:**
+❌ BAD: "CO0003 shows 1,366 months"
+✅ GOOD: "Extensive experience with current ship type (1,366 months in tankers)"
+
+❌ BAD: "Issues with CL0001 and CL0003"
+✅ GOOD: "Inspection compliance concerns with negative findings"
+
+❌ BAD: "CP0001 is 100%"
+✅ GOOD: "Perfect voyage completion record (100% success rate)"
 
 Example CORRECT format:
 {
@@ -377,12 +507,24 @@ ${multipleCrewData && multipleCrewData.length > 0
   : 'No multiple crew data provided'}
 
 CRITICAL INSTRUCTIONS:
-1. **BASE YOUR ANSWER ONLY ON THE PROVIDED KPI DATA** from the 4 views above. Do not use external knowledge or make assumptions.
-2. If KPI data includes JSON details, use those details to provide specific, factual information.
-3. If data is missing for a specific KPI, acknowledge it explicitly (e.g., "Data not available for work experience metric").
-4. Do not infer or assume values that are not in the provided data.
-5. When comparing KPIs, use the actual scores and details provided.
-6. If the query asks about something not covered by the KPI data, state that clearly.
+
+1. **STATUS AND VESSEL DETERMINATION (HIGHEST PRIORITY)**:
+   - sailing_status is the ONLY source of truth for onboard/leave status
+   - current_vessel_name from CREW INFORMATION is the ONLY source for vessel names
+   - NEVER extract vessel names from KPI JSON details, experience history, or conversation context
+   - NEVER invent or assume vessel names
+   
+   Rules:
+   - sailing_status='atsea' + vessel name present → "Currently onboard [vessel_name]"
+   - sailing_status='atsea' + no vessel name → "Currently onboard (vessel assignment being confirmed)"
+   - sailing_status='onleave' → "Currently on leave (not onboard)" - ignore any vessel data
+
+2. **BASE YOUR ANSWER ONLY ON THE PROVIDED KPI DATA** from the 4 views above. Do not use external knowledge or make assumptions.
+3. If KPI data includes JSON details, use those details to provide specific, factual information.
+4. If data is missing for a specific KPI, acknowledge it explicitly (e.g., "Data not available for work experience metric").
+5. Do not infer or assume values that are not in the provided data.
+6. When comparing KPIs, use the actual scores and details provided.
+7. If the query asks about something not covered by the KPI data, state that clearly.
 
 STRICT OUTPUT FORMAT:
 You MUST respond in the following JSON structure (no markdown, no extra text):
@@ -446,6 +588,100 @@ Respond with ONLY the JSON object, no additional text before or after.`;
 USER QUERY:
 "${query}"
 
+## AVAILABLE DATA SOURCES:
+
+### 1. crew_master_data (vw_csi_crew_master)
+Contains basic crew information AND current status:
+- seafarer_id, crew_code, seafarer_name, email_id, contact_number
+- current_rank_name, department_name, pod_name
+- **sailing_status**: 'atsea' (onboard) or 'onleave'
+- **current_vessel_name**: Name of vessel if onboard
+- created_at, updated_at
+
+**CAN ANSWER**: 
+- "Is X onboard or on leave?"
+- "Which vessel is X on?"
+- "What's X's current rank/department?"
+- "Show me X's contact information"
+
+### 2. vw_csi_competency (11 KPIs: CO0001-CO0011)
+**Category: Competency, Experience, Training**
+
+| KPI Code | Description | Units | What It Measures |
+|----------|-------------|-------|------------------|
+| CO0001 | Work experience with Synergy | Months | Total time with company |
+| CO0002 | Current rank experience | Months | Time in current rank |
+| CO0003 | Time in current ship type | Months | Experience with vessel type (e.g., tankers) |
+| CO0004 | Serving on OTA ship in last 5 years | Binary | Recent specialized vessel experience |
+| CO0005 | Vessel takeover - new | Count | New vessel delivery experience |
+| CO0006 | Vessel takeover - second hand | Count | Used vessel acquisition experience |
+| CO0007 | Onboard training and courses | Count | Training completed onboard |
+| CO0008 | Dry dock experience | Count | Dry dock project experience |
+| CO0009 | CBT score | Score | Computer-based training assessment |
+| CO0010 | Training matrix course | Count | Formal training certifications |
+| CO0011 | Superior certificate | Binary | Has higher-level certificates |
+
+**CAN ANSWER**:
+- "How experienced is X with tankers?"
+- "Has X completed required training?"
+- "What's X's training record?"
+- "How long has X been with the company?"
+
+### 3. vw_csi_capability (5 KPIs: CP0001-CP0005)
+**Category: Performance, Capability, Medical**
+
+| KPI Code | Description | Units | What It Measures |
+|----------|-------------|-------|------------------|
+| CP0001 | Successful voyage performance | Percentage | Voyage completion success rate |
+| CP0002 | Days since last failure | Days | Time since last operational failure |
+| CP0003 | Average appraisal score | Score | Performance review average |
+| CP0004 | Psychometric score | Score | Psychological assessment results |
+| CP0005 | Sign-off due to medical reason (3 years) | Count | Medical-related contract terminations |
+
+**CAN ANSWER**:
+- "What's X's performance record?"
+- "Any recent failures or incidents?"
+- "How reliable is X operationally?"
+- "Any medical concerns?"
+
+### 4. vw_csi_character (7 KPIs: CH0001-CH0007)
+**Category: Contract Reliability, Behavioral Scores**
+
+| KPI Code | Description | Units | What It Measures |
+|----------|-------------|-------|------------------|
+| CH0001 | Successful contract | Percentage | Contract completion rate |
+| CH0002 | Off-hire days last 3 years | Days | Time vessel off-hire due to crew |
+| CH0003 | Sign-on delays | Count | Late joinings |
+| CH0004 | Leadership | Score | Leadership assessment |
+| CH0005 | Management | Score | Management capability |
+| CH0006 | Teamwork | Score | Team collaboration |
+| CH0007 | Knowledge | Score | Technical knowledge assessment |
+
+**CAN ANSWER**:
+- "Is X reliable for contracts?"
+- "Any sign-on delays?"
+- "How are X's leadership skills?"
+- "What's X's teamwork rating?"
+
+### 5. vw_csi_collaboration (7 KPIs: CL0001-CL0007)
+**Category: Inspections, Incidents, Communication**
+
+| KPI Code | Description | Units | What It Measures |
+|----------|-------------|-------|------------------|
+| CL0001 | Negative inspections (3 years) | Count/% | Failed inspections |
+| CL0002 | Number of detentions (3 years) | Count | Vessel detentions |
+| CL0003 | Positive inspections (3 years) | Count/% | Passed inspections |
+| CL0004 | Vetting awards (3 years) | Count | Recognition/awards |
+| CL0005 | Major incidents (3 years) | Count | Serious incidents |
+| CL0006 | Shore communication | Score | Communication with shore staff |
+| CL0007 | Ship communication | Score | Onboard communication |
+
+**CAN ANSWER**:
+- "Any inspection issues?"
+- "Has X been involved in incidents?"
+- "How's X's compliance record?"
+- "Any communication problems?"
+
 TASK:
 Extract and structure the following information:
 
@@ -454,6 +690,7 @@ Extract and structure the following information:
    - summary: Get performance summary
    - risk_analysis: Assess risks
    - kpi_query: Query specific KPI
+   - status_query: Query onboard/leave status or current vessel (NEW)
    - comparison: Compare crew members
    - trend_analysis: Analyze trends over time
    - certification_check: Check certifications
@@ -476,13 +713,12 @@ Extract and structure the following information:
    - Aggregation levels
 
 4. DATA SOURCES: What data sources are needed?
-   - Crew master data
-   - KPI values
-   - Experience history
-   - Certifications
-   - Performance events
-   - Appraisals
-   - AI summaries
+   Use the exact source names from above:
+   - "crew_master_data" for vw_csi_crew_master
+   - "vw_csi_competency" for competency KPIs
+   - "vw_csi_capability" for capability KPIs
+   - "vw_csi_character" for character KPIs
+   - "vw_csi_collaboration" for collaboration KPIs
 
 OUTPUT FORMAT (JSON):
 {
@@ -510,12 +746,62 @@ OUTPUT FORMAT (JSON):
   "clarification_questions": ["array of questions if clarification needed"]
 }
 
+## CRITICAL RULES FOR CLARIFICATION:
+
+1. If query asks about onboard/leave status → intent: "status_query", required_data_sources: ["crew_master_data"], clarification_needed: FALSE
+2. If query asks about current vessel → intent: "status_query", required_data_sources: ["crew_master_data"], clarification_needed: FALSE
+3. If query asks about specific KPIs listed above → clarification_needed: FALSE
+4. ONLY set clarification_needed: TRUE if query is genuinely ambiguous (e.g., "tell me about performance" without specifying person or KPI)
+
+## EXAMPLES:
+
+Example 1:
+Query: "Is Ashok Mohan onboard or on leave?"
+Output: {
+  "intent": "status_query",
+  "confidence": 0.95,
+  "entities": { "crew_members": ["Ashok Mohan"] },
+  "required_data_sources": ["crew_master_data"],
+  "clarification_needed": false
+}
+
+Example 2:
+Query: "Which vessel is John on?"
+Output: {
+  "intent": "status_query",
+  "confidence": 0.9,
+  "entities": { "crew_members": ["John"] },
+  "required_data_sources": ["crew_master_data"],
+  "clarification_needed": false
+}
+
+Example 3:
+Query: "How experienced is Smith with tankers?"
+Output: {
+  "intent": "kpi_query",
+  "confidence": 0.85,
+  "entities": { "crew_members": ["Smith"], "kpi_codes": ["CO0003"] },
+  "required_data_sources": ["crew_master_data", "vw_csi_competency"],
+  "clarification_needed": false
+}
+
+Example 4:
+Query: "Any inspection issues with crew member X?"
+Output: {
+  "intent": "kpi_query",
+  "confidence": 0.9,
+  "entities": { "crew_members": ["X"], "kpi_codes": ["CL0001", "CL0003"] },
+  "required_data_sources": ["crew_master_data", "vw_csi_collaboration"],
+  "clarification_needed": false
+}
+
 REQUIREMENTS:
 - Be precise in intent classification
 - Extract all mentioned entities
 - Identify implicit time ranges
-- Determine what data sources are needed to answer the query
-- Flag if query is ambiguous and needs clarification
+- Determine what data sources are needed to answer the query based on the available sources above
+- Flag clarification_needed as FALSE unless query is genuinely ambiguous
+- Use exact data source names as listed above
 
 Respond with valid JSON only, no additional text.`;
   }
